@@ -470,7 +470,7 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
     }
 
     if(yearChart) yearChart.destroy();
-    yearChart = new Chart($("chartYear"), {($("chartYear"), {
+    yearChart = new Chart($("chartYear"), {
       type:"bar",
       data:{
         labels:["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],
