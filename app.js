@@ -4,8 +4,10 @@
 (() => {
   const cfg = window.HEIZLOG_CONFIG;
   const supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
+
   let session = null;
   let dailyChart = null;
+  let yearChart = null;
   let compareChart = null;
 
   const $ = (id) => document.getElementById(id);
@@ -17,32 +19,26 @@
     return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
   }
   function parseISODate(s) {
-    // s: YYYY-MM-DD
     const [y,m,da] = s.split("-").map(Number);
     return new Date(y, m-1, da);
   }
   function monthStartEnd(monthStr) {
-    // monthStr: YYYY-MM
     const [y,m] = monthStr.split("-").map(Number);
     const start = new Date(y, m-1, 1);
-    const end = new Date(y, m, 0); // last day
+    const end = new Date(y, m, 0);
     return { start, end };
   }
   function daysInMonth(y,m1based) {
     return new Date(y, m1based, 0).getDate();
   }
-  function clamp(n, lo, hi){ return Math.max(lo, Math.min(hi, n)); }
+  function dayDiff(a, b){
+    return Math.round((b - a) / (1000*60*60*24));
+  }
 
   function fmt1(x){ return (x==null || Number.isNaN(x)) ? "—" : Number(x).toFixed(1); }
   function fmt2(x){ return (x==null || Number.isNaN(x)) ? "—" : Number(x).toFixed(2); }
   function fmt0(x){ return (x==null || Number.isNaN(x)) ? "—" : String(Math.round(Number(x))); }
-  function fmtHM(mins){
-    if(mins==null || Number.isNaN(mins)) return "—";
-    const m = Math.round(Number(mins));
-    const h = Math.floor(m/60);
-    const mm = m%60;
-    return `${h}h ${pad2(mm)}m`;
-  }
+
   function rgbFromHex(hex){
     const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     if(!m) return {r:79,g:140,b:255};
@@ -50,16 +46,15 @@
   }
 
   function heatingYearRange(startDate){
-    // startDate: Date (should be 04.09.YYYY)
     const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-    const end = new Date(startDate.getFullYear()+1, startDate.getMonth(), startDate.getDate()); // exclusive-ish for diff
+    const end = new Date(startDate.getFullYear()+1, startDate.getMonth(), startDate.getDate());
     return {start, end};
   }
 
   // ---------- Settings ----------
   const settingsKey = "heizlog_settings_v1";
   function loadSettings(){
-    const def = { houseName: "Haus", rosiName: "Gebäude 2", accent: "#4f8cff" };
+    const def = { houseName: "Wohnhaus", rosiName: "Gebäude 2", accent: "#4f8cff" };
     try{
       const s = JSON.parse(localStorage.getItem(settingsKey) || "null");
       return {...def, ...(s||{})};
@@ -80,13 +75,12 @@
     document.documentElement.style.setProperty("--accent-g", String(rgb.g));
     document.documentElement.style.setProperty("--accent-b", String(rgb.b));
 
-    // Update a few labels
     $("lblHeatRosi").textContent = `Wärme ${s.rosiName} (kWh, Zähler)`;
     $("lblHeatTotal").textContent = `Wärme gesamt (kWh, Zähler)`;
-    $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${s.rosiName}.`;
+        const lblHouse = $("lblHeatHouse");
+    if(lblHouse) lblHouse.textContent = `Wärme ${s.houseName} (kWh, berechnet)`;
+$("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${s.rosiName}.`;
 
-    // Update checkbox labels (quick)
-    document.querySelector('label[for=""]'); // noop
     const cbLabels = document.querySelectorAll(".checkboxes label");
     if(cbLabels.length >= 3){
       cbLabels[0].lastChild.textContent = ` Heizkörper ${s.houseName} an`;
@@ -95,11 +89,24 @@
     }
   }
 
+  // live derived field (Wohnhaus Wärme Zähler)
+  function updateDerivedHeat(){
+    const out = $("heat_house_calc");
+    if(!out) return;
+    const total = $("heat_total_kwh")?.value;
+    const rosi = $("heat_rosi_kwh")?.value;
+    if(total==null || rosi==null || total==="" || rosi===""){ out.value=""; return; }
+    const t = Number(total); const r = Number(rosi);
+    if(Number.isNaN(t) || Number.isNaN(r)){ out.value=""; return; }
+    out.value = (t - r).toFixed(1);
+  }
+
   // ---------- Tabs ----------
   const tabDefs = [
     {id:"heute", label:"Heute"},
     {id:"eintraege", label:"Einträge"},
     {id:"auswertung", label:"Auswertung"},
+    {id:"jahr", label:"Jahr"},
     {id:"vergleich", label:"Vergleich"},
     {id:"kosten", label:"Kosten"},
     {id:"hacks", label:"Hackschnitzel"},
@@ -159,9 +166,8 @@
     renderAuthState();
   }
   async function signup(email, pass){
-    const { data, error } = await supabase.auth.signUp({ email, password: pass });
+    const { error } = await supabase.auth.signUp({ email, password: pass });
     if(error) throw error;
-    // With email-confirm disabled, session should be available quickly.
     session = (await supabase.auth.getSession()).data.session;
     renderAuthState();
   }
@@ -253,62 +259,116 @@
 
   // ---------- Calculations (Option B distribution) ----------
   function distributeDaily(readings, monthStr, field){
-    // readings: sorted by day, include padding around month if possible
-    // returns daily array (length daysInMonth) of distributed consumption for selected field (kWh / minutes / integer counts / kg)
     const {start, end} = monthStartEnd(monthStr);
     const y = start.getFullYear(), m1 = start.getMonth()+1;
     const nDays = daysInMonth(y, m1);
 
-    const dayIndex = (d) => {
-      // d Date within month
-      return d.getDate()-1;
-    };
-
+    const dayIndex = (d) => d.getDate()-1;
     const daily = new Array(nDays).fill(0);
 
-    // Filter pairs where field is not null at both endpoints
     for(let i=0; i<readings.length-1; i++){
       const a = readings[i], b = readings[i+1];
       if(a[field]==null || b[field]==null) continue;
       const da = parseISODate(a.day);
       const db = parseISODate(b.day);
-      const gap = Math.round((db - da) / (1000*60*60*24));
+      const gap = dayDiff(da, db);
       if(gap <= 0) continue;
 
       let delta = Number(b[field]) - Number(a[field]);
 
       // Special case: chips_kg_since_ash can reset to 0 after ash empty
       if(field === "chips_kg_since_ash" && delta < 0){
-        // treat as reset: consumption = b value (since last reset)
         delta = Number(b[field]);
       }
-      // If counters reset unexpectedly, ignore negative deltas
       if(delta < 0) continue;
 
       const perDay = delta / gap;
-
-      // distribute to days (da+1 ... db) inclusive? consumption happened between days.
-      // We'll attribute perDay to each day after a up to b (exclusive of a day).
       for(let k=1; k<=gap; k++){
         const d = new Date(da.getFullYear(), da.getMonth(), da.getDate()+k);
         if(d < start || d > end) continue;
         daily[dayIndex(d)] += perDay;
       }
     }
-
     return daily;
-  }
-
-  function monthTotalFromReadings(readings, field){
-    // Use first and last non-null within month; if chips resets, sum distributed is safer; we use distributed sum.
-    return readings.reduce((acc, r) => acc + (r[field]==null ? 0 : 0), 0);
   }
 
   function sum(arr){ return arr.reduce((a,b)=>a+b,0); }
   function max(arr){ return arr.reduce((m,v)=>v>m?v:m, -Infinity); }
 
+  // ---------- Status analysis (checkboxes) ----------
+  function statusSummary(rows){
+    const s = loadSettings();
+    const fields = [
+      {key:"hk_house", name:`Heizkörper ${s.houseName}`},
+      {key:"hk_rosi", name:`Heizkörper ${s.rosiName}`},
+      {key:"fbh_rosi", name:`FBH ${s.rosiName}`},
+    ];
+
+    function formatRange(a, b, open){
+      if(!a) return "";
+      if(open) return `${a} bis (letzter Eintrag)`;
+      if(!b) return `${a} bis ?`;
+      return `${a} bis ${b}`;
+    }
+
+    const lines = [];
+    for(const f of fields){
+      const r = rows
+        .filter(x => x[f.key] !== null && x[f.key] !== undefined)
+        .map(x => ({day: x.day, val: !!x[f.key]}));
+
+      if(r.length === 0){
+        lines.push(`<li><strong>${f.name}:</strong> keine Daten (Häkchen nie gespeichert)</li>`);
+        continue;
+      }
+
+      let transitions = [];
+      let segments = [];
+      let currentStart = null;
+
+      for(let i=0; i<r.length; i++){
+        const cur = r[i];
+        const prev = r[i-1];
+        if(prev && prev.val !== cur.val){
+          transitions.push({day: cur.day, to: cur.val});
+        }
+        if(cur.val && !currentStart){
+          currentStart = cur.day;
+        }
+        if(!cur.val && currentStart){
+          segments.push({start: currentStart, end: cur.day, open:false});
+          currentStart = null;
+        }
+      }
+      if(currentStart){
+        segments.push({start: currentStart, end: r[r.length-1].day, open:true});
+      }
+
+      const onDays = r.filter(x=>x.val).length;
+      const totalRecorded = r.length;
+
+      const segText = segments.length
+        ? "<ul>" + segments.map(seg => `<li>${formatRange(seg.start, seg.end, seg.open)}</li>`).join("") + "</ul>"
+        : "<div class='muted'>keine AN-Phasen gefunden</div>";
+
+      const tranText = transitions.length
+        ? transitions.map(t => `${t.day}: ${t.to ? "AN" : "AUS"}`).join(", ")
+        : "keine Umschaltung erkannt (oder nur einmal gesetzt)";
+
+      lines.push(
+        `<li><strong>${f.name}:</strong> ${onDays}/${totalRecorded} Tage AN (von gespeicherten Tagen)
+          <div class="muted">Umschaltungen: ${tranText}</div>
+          ${segText}
+        </li>`
+      );
+    }
+
+    const hdr = `<div class="muted">Hinweis: Auswertung basiert nur auf Tagen mit Eintrag (fehlende Tage = unbekannt).</div>`;
+    return hdr + `<ul>${lines.join("")}</ul>`;
+  }
+
+  // ---------- Month analysis ----------
   async function analyzeMonth(monthStr){
-    // Fetch padding around month to distribute properly
     const {start, end} = monthStartEnd(monthStr);
     const padStart = new Date(start.getFullYear(), start.getMonth(), start.getDate()-40);
     const padEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate()+40);
@@ -318,9 +378,11 @@
 
     const dailyHeatTotal = distributeDaily(readings, monthStr, "heat_total_kwh");
     const dailyHeatRosi  = distributeDaily(readings, monthStr, "heat_rosi_kwh");
-    const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
-    const dailyElecPump  = distributeDaily(readings, monthStr, "elec_pump_kwh"); // optional
-    const dailyFullMins  = distributeDaily(readings, monthStr, "full_load_minutes");
+    
+    const dailyHeatHouse = dailyHeatTotal.map((v,i)=>v - (dailyHeatRosi[i]||0));
+const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
+    const dailyElecPump  = distributeDaily(readings, monthStr, "elec_pump_kwh");
+    const dailyFullHours = distributeDaily(readings, monthStr, "full_load_minutes").map(v=>v/60);
     const dailyBuffer    = distributeDaily(readings, monthStr, "buffer_charges");
     const dailyChipsKg   = distributeDaily(readings, monthStr, "chips_kg_since_ash");
 
@@ -330,73 +392,110 @@
 
     const elecHeat = sum(dailyElecHeat);
     const elecPump = sum(dailyElecPump);
-
-    const fullHours = sum(dailyFullMins) / 60.0;
+    const fullHours = sum(dailyFullHours);
     const bufferCnt = sum(dailyBuffer);
     const chipsKg   = sum(dailyChipsKg);
 
-    const {start:ms, end:me} = monthStartEnd(monthStr);
-    const nDays = me.getDate();
+    const nDays = end.getDate();
     const avgHeatTotal = heatTotal / nDays;
-    const avgChips = chipsKg / nDays;
+    const avgHeatRosi = heatRosi / nDays;
+    const avgElecHeat = elecHeat / nDays;
+    const avgElecPump = elecPump / nDays;
     const avgHours = fullHours / nDays;
+    const avgBuffer = bufferCnt / nDays;
+    const avgChips = chipsKg / nDays;
 
-    const peakHeat = max(dailyHeatTotal);
+    const peakHeatTotal = max(dailyHeatTotal);
     const peakChips = max(dailyChipsKg);
+    const peakHours = max(dailyFullHours);
 
-    // KPIs
+    // warnings
+    const warn = $("monthWarn");
+    warn.classList.add("hidden");
+    warn.innerHTML = "";
+    if(heatHouse < -0.0001){
+      warn.classList.remove("hidden");
+      warn.innerHTML = `<strong>Achtung:</strong> Für diesen Monat ist (Gesamt − ${s.rosiName}) negativ. Prüfe ob Gesamt-Zählerstände ≥ ${s.rosiName}-Zählerstände sind.`;
+    }
+
     const kpis = [
       {k:"Wärme Gesamt (kWh)", v: fmt1(heatTotal)},
       {k:`Wärme ${s.rosiName} (kWh)`, v: fmt1(heatRosi)},
       {k:`Wärme ${s.houseName} (kWh)`, v: fmt1(heatHouse)},
       {k:"Ø Wärme Gesamt / Tag", v: fmt1(avgHeatTotal)},
+      {k:`Ø Wärme ${s.rosiName} / Tag`, v: fmt1(avgHeatRosi)},
       {k:"Strom Heizung (kWh)", v: fmt2(elecHeat)},
+      {k:"Ø Strom Heizung / Tag", v: fmt2(avgElecHeat)},
       {k:"Strom Fernwärme (kWh)", v: fmt2(elecPump)},
+      {k:"Ø Strom Fernwärme / Tag", v: fmt2(avgElecPump)},
+      {k:"Vollaststunden (h)", v: fmt1(fullHours)},
+      {k:"Ø Vollaststunden / Tag", v: fmt1(avgHours)},
+      {k:"Pufferladungen", v: fmt0(bufferCnt)},
+      {k:"Ø Pufferladungen / Tag", v: fmt1(avgBuffer)},
       {k:"Hackschnitzel Verbrauch (kg)", v: fmt1(chipsKg)},
       {k:"Ø Hackschnitzel / Tag", v: fmt1(avgChips)},
-      {k:"Betriebszeit (h)", v: fmt1(fullHours)},
-      {k:"Ø Betriebszeit / Tag (h)", v: fmt1(avgHours)},
-      {k:"Pufferladungen", v: fmt0(bufferCnt)},
-      {k:"Peak Wärme/Tag (kWh)", v: fmt1(peakHeat)},
+      {k:"Peak Wärme/Tag (kWh)", v: fmt1(peakHeatTotal)},
+      {k:"Peak Hacks/Tag (kg)", v: fmt1(peakChips)},
+      {k:"Peak Vollast/Tag (h)", v: fmt1(peakHours)},
     ];
-
     $("kpis").innerHTML = kpis.map(x => `
       <div class="box"><div class="v">${x.v}</div><div class="k">${x.k}</div></div>
     `).join("");
 
-    // Chart (daily heat total)
-    const labels = dailyHeatTotal.map((_,i)=>String(i+1));
-    if(dailyChart) dailyChart.destroy();
-    dailyChart = new Chart($("chartDaily"), {
-      type:"line",
+    // chart
+    const metric = $("yearMetric")?.value || "heat_total_kwh";
+
+    const labels = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+
+    let datasets = [];
+    if(metric === "heat_breakdown"){
+      datasets = [
+        { label:`Wärme Gesamt (kWh) – ${y}`, data: heatTot.map(v=>Number((+v).toFixed(2))) },
+        { label:`Wärme ${s.houseName} (kWh) – ${y}`, data: heatHouse.map(v=>Number((+v).toFixed(2))) },
+        { label:`Wärme ${s.rosiName} (kWh) – ${y}`, data: heatRosi.map(v=>Number((+v).toFixed(2))) },
+      ];
+    }else{
+      const series = monthlyTotals(metric);
+      const metricLabel = {
+        heat_total_kwh: "Wärme gesamt (kWh)",
+        heat_rosi_kwh: `Wärme ${s.rosiName} (kWh)`,
+        elec_heating_kwh: "Strom Heizung (kWh)",
+        elec_pump_kwh: "Strom Fernwärmeleitung (kWh)",
+        full_load_minutes: "Vollaststunden (h)",
+        buffer_charges: "Pufferladungen",
+        chips_kg_since_ash: "Hackschnitzel Verbrauch (kg)",
+      }[metric] || "Wärme gesamt (kWh)";
+
+      datasets = [{ label:`${metricLabel} – ${y}`, data: series.map(v=>Number((+v).toFixed(2))) }];
+    }
+
+    if(yearChart) yearChart.destroy();
+    yearChart = new Chart($("chartYear"), {($("chartYear"), {
+      type:"bar",
       data:{
-        labels,
-        datasets:[{
-          label:"Wärme Gesamt (kWh/Tag)",
-          data: dailyHeatTotal.map(v => Number(v.toFixed(3))),
-          tension:0.25,
-          pointRadius:2,
-        }]
+        labels:["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],
+        datasets:[{ label: `${metricLabel} – ${y}`, data: series.map(v=>Number((+v).toFixed(2))) }]
       },
       options:{
         responsive:true,
-        plugins:{
-          legend:{ display:true, labels:{ color:"#e7eefc" } },
-          tooltip:{}
-        },
+        plugins:{ legend:{ labels:{ color:"#e7eefc" } } },
         scales:{
           x:{ ticks:{ color:"#93a4c7" }, grid:{ color:"rgba(255,255,255,.06)" } },
           y:{ ticks:{ color:"#93a4c7" }, grid:{ color:"rgba(255,255,255,.06)" } }
         }
       }
     });
+
+    const rowsYear = await fetchDailyRange(toISODate(start), toISODate(end));
+    $("statusYear").innerHTML = statusSummary(rowsYear);
   }
 
-  // Comparison: monthly totals for a year (heat_total)
+  // ---------- Comparison (metric selectable) ----------
   async function compareYears(yearA, yearB){
+    const metric = $("cmpMetric")?.value || "heat_total_kwh";
     const years = [yearA, yearB].map(Number);
     const minY = Math.min(...years), maxY = Math.max(...years);
-    // fetch padding for both years
+
     const start = new Date(minY, 0, 1);
     const end = new Date(maxY, 11, 31);
     const padStart = new Date(start.getFullYear(), start.getMonth(), start.getDate()-50);
@@ -406,11 +505,9 @@
     function monthlyTotalsForYear(y){
       const totals = [];
       for(let m=1; m<=12; m++){
-        const ms = new Date(y, m-1, 1);
-        const me = new Date(y, m, 0);
         const monthStr = `${y}-${pad2(m)}`;
-        // Use distribution limited to that month
-        const daily = distributeDaily(readings, monthStr, "heat_total_kwh");
+        let daily = distributeDaily(readings, monthStr, metric);
+        if(metric === "full_load_minutes") daily = daily.map(v=>v/60);
         totals.push(sum(daily));
       }
       return totals;
@@ -425,8 +522,8 @@
       data:{
         labels:["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],
         datasets:[
-          { label:String(yearA), data:a.map(v=>Number(v.toFixed(2))) },
-          { label:String(yearB), data:b.map(v=>Number(v.toFixed(2))) },
+          { label:String(yearA), data:a.map(v=>Number((+v).toFixed(2))) },
+          { label:String(yearB), data:b.map(v=>Number((+v).toFixed(2))) },
         ]
       },
       options:{
@@ -440,17 +537,15 @@
     });
   }
 
-  // Heizjahr cost
+  // ---------- Heizjahr cost ----------
   async function calcHeizjahr(hyStartISO){
     const start = parseISODate(hyStartISO);
     const {start:hs, end:he} = heatingYearRange(start);
-    // padding for distribution
     const padStart = new Date(hs.getFullYear(), hs.getMonth(), hs.getDate()-50);
     const padEnd = new Date(he.getFullYear(), he.getMonth(), he.getDate()+50);
     const readings = await fetchDailyRange(toISODate(padStart), toISODate(padEnd));
 
     const hyMonthStrs = [];
-    // We'll compute consumption by distributing for each month that overlaps
     let cur = new Date(hs.getFullYear(), hs.getMonth(), 1);
     while(cur < he){
       hyMonthStrs.push(`${cur.getFullYear()}-${pad2(cur.getMonth()+1)}`);
@@ -458,17 +553,16 @@
     }
 
     let heatTotal=0, heatRosi=0;
+    const lastDay = new Date(he.getFullYear(), he.getMonth(), he.getDate()-1);
     for(const ms of hyMonthStrs){
       const {start:msd, end:med} = monthStartEnd(ms);
-      // month overlap with hy range
       const overlapStart = msd < hs ? hs : msd;
-      const overlapEnd = med > new Date(he.getFullYear(), he.getMonth(), he.getDate()-1) ? new Date(he.getFullYear(), he.getMonth(), he.getDate()-1) : med;
+      const overlapEnd = med > lastDay ? lastDay : med;
       if(overlapEnd < overlapStart) continue;
 
       const dailyTot = distributeDaily(readings, ms, "heat_total_kwh");
       const dailyRos = distributeDaily(readings, ms, "heat_rosi_kwh");
 
-      // sum only overlap days within that month
       for(let d=overlapStart; d<=overlapEnd; d=new Date(d.getFullYear(), d.getMonth(), d.getDate()+1)){
         const idx = d.getDate()-1;
         heatTotal += dailyTot[idx] || 0;
@@ -506,24 +600,27 @@
     $("anMonth").value = `${now.getFullYear()}-${pad2(now.getMonth()+1)}`;
     $("chipMonth").value = `${now.getFullYear()}-${pad2(now.getMonth()+1)}`;
 
-    // Heizjahr defaults: nearest 04.09.
-    const y = now.getFullYear();
-    const hyStart = new Date(y, 8, 4); // Sep=8
-    const hy = (now < hyStart) ? new Date(y-1, 8, 4) : hyStart;
-    $("hyStart").value = toISODate(hy);
-    $("hyPick").value = toISODate(hy);
-
-    // year dropdown
+    // years
     const startY = 2022;
     const endY = now.getFullYear()+1;
     const years = [];
     for(let yy=startY; yy<=endY; yy++) years.push(yy);
-    ["yearA","yearB"].forEach(id => {
+
+    ["yearA","yearB","yearPick"].forEach(id => {
       const sel = $(id);
+      if(!sel) return;
       sel.innerHTML = years.map(yy => `<option value="${yy}">${yy}</option>`).join("");
     });
     $("yearA").value = String(now.getFullYear()-1);
     $("yearB").value = String(now.getFullYear());
+    $("yearPick").value = String(now.getFullYear());
+
+    // Heizjahr defaults: nearest 04.09.
+    const y = now.getFullYear();
+    const hyStart = new Date(y, 8, 4);
+    const hy = (now < hyStart) ? new Date(y-1, 8, 4) : hyStart;
+    $("hyStart").value = toISODate(hy);
+    $("hyPick").value = toISODate(hy);
   }
 
   async function loadDayToForm(dayISO){
@@ -537,6 +634,7 @@
     const r = data?.[0];
     if(!r){
       $("todayMsg").textContent = "Kein Eintrag für dieses Datum.";
+      updateDerivedHeat();
       return;
     }
     $("time").value = (r.time_hhmm || cfg.defaultTime || "18:00");
@@ -560,6 +658,7 @@
       $("full_h").value = "";
       $("full_m").value = "";
     }
+    updateDerivedHeat();
     $("todayMsg").textContent = "Eintrag geladen.";
   }
 
@@ -591,6 +690,7 @@
     };
 
     await upsertDaily(payload);
+    updateDerivedHeat();
     $("todayMsg").textContent = "Gespeichert ✅";
   }
 
@@ -607,7 +707,8 @@
       const left = document.createElement("div");
       const heat = (r.heat_total_kwh==null) ? "—" : fmt1(r.heat_total_kwh);
       const rosi = (r.heat_rosi_kwh==null) ? "—" : fmt1(r.heat_rosi_kwh);
-      left.innerHTML = `<strong>Wärme</strong><small>Ges: ${heat} | ${s.rosiName}: ${rosi}</small>`;
+      const house = (r.heat_total_kwh==null || r.heat_rosi_kwh==null) ? "—" : fmt1(Number(r.heat_total_kwh) - Number(r.heat_rosi_kwh));
+      left.innerHTML = `<strong>Wärme (Zähler)</strong><small>Ges: ${heat} | ${s.houseName}: ${house} | ${s.rosiName}: ${rosi}</small>`;
 
       const it = document.createElement("div");
       it.className = "item";
@@ -624,8 +725,10 @@
 
   async function loadChippingList(monthStr){
     const {start, end} = monthStartEnd(monthStr);
-    const rows = await fetchChippingRange(new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0,0,0).toISOString(),
-                                         new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23,59,59).toISOString());
+    const rows = await fetchChippingRange(
+      new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0,0,0).toISOString(),
+      new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23,59,59).toISOString()
+    );
     const list = $("chipList");
     list.innerHTML = "";
     rows.forEach(r => {
@@ -720,11 +823,21 @@
 
     $("btnAnalyze").addEventListener("click", async () => {
       $("kpis").innerHTML = "";
-      try{ await analyzeMonth($("anMonth").value); }catch(e){ $("kpis").innerHTML = `<div class="muted">${e.message || e}</div>`; }
+      $("statusMonth").innerHTML = "";
+      try{ await analyzeMonth($("anMonth").value); }
+      catch(e){ $("kpis").innerHTML = `<div class="muted">${e.message || e}</div>`; }
+    });
+
+    $("btnYearAnalyze").addEventListener("click", async () => {
+      $("yearKpis").innerHTML = "";
+      $("statusYear").innerHTML = "";
+      try{ await analyzeYear($("yearPick").value); }
+      catch(e){ $("yearKpis").innerHTML = `<div class="muted">${e.message || e}</div>`; }
     });
 
     $("btnCompare").addEventListener("click", async () => {
-      try{ await compareYears($("yearA").value, $("yearB").value); }catch(e){ alert(e.message || e); }
+      try{ await compareYears($("yearA").value, $("yearB").value); }
+      catch(e){ alert(e.message || e); }
     });
 
     $("btnSavePrice").addEventListener("click", async () => {
@@ -742,7 +855,8 @@
     });
 
     $("btnCalcHY").addEventListener("click", async () => {
-      try{ await calcHeizjahr($("hyPick").value); }catch(e){ $("hyKpis").innerHTML = `<div class="muted">${e.message || e}</div>`; }
+      try{ await calcHeizjahr($("hyPick").value); }
+      catch(e){ $("hyKpis").innerHTML = `<div class="muted">${e.message || e}</div>`; }
     });
 
     $("btnAddChipping").addEventListener("click", async () => {
@@ -764,7 +878,8 @@
     });
 
     $("btnLoadChipping").addEventListener("click", async () => {
-      try{ await loadChippingList($("chipMonth").value); }catch(e){ $("chipList").innerHTML = `<div class="muted">${e.message || e}</div>`; }
+      try{ await loadChippingList($("chipMonth").value); }
+      catch(e){ $("chipList").innerHTML = `<div class="muted">${e.message || e}</div>`; }
     });
 
     $("btnSaveSettings").addEventListener("click", async () => {
@@ -782,14 +897,18 @@
       try{ await exportJson(); }catch(e){ alert(e.message || e); }
     });
 
-    // Supabase auth listener
     supabase.auth.onAuthStateChange((_event, _session) => {
       session = _session;
       renderAuthState();
     });
 
     await refreshSession();
-  }
+      updateDerivedHeat();
+}
 
-  document.addEventListener("DOMContentLoaded", init);
+    // derived calc listeners
+    $("heat_total_kwh")?.addEventListener("input", updateDerivedHeat);
+    $("heat_rosi_kwh")?.addEventListener("input", updateDerivedHeat);
+
+document.addEventListener("DOMContentLoaded", init);
 })();
