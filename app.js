@@ -102,7 +102,7 @@
     {id:"auswertung", label:"Auswertung"},
     {id:"vergleich", label:"Vergleich"},
     {id:"kosten", label:"Kosten"},
-    {id:"hacks", label:"Hacks"},
+    {id:"hacks", label:"Hackschnitzel"},
     {id:"settings", label:"Einstellungen"},
   ];
   function showTab(id){
