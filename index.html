@@ -81,7 +81,7 @@
     .grid{display:grid; gap:10px}
     .grid.two{grid-template-columns: 1fr 1fr}
     .row{display:flex; gap:8px; flex-wrap:wrap}
-    .row > *{flex:1 1 140px}
+    .row > *{flex:1 1 160px}
     .muted{color:var(--muted); font-size:13px}
     .hr{height:1px; background:rgba(255,255,255,.08); margin:12px 0}
     .hidden{display:none !important}
@@ -102,6 +102,9 @@
     .checkboxes input{width:auto}
     .badge{display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px;
       background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); color:var(--muted);}
+    .warn{border:1px solid rgba(255,176,32,.35); background:rgba(255,176,32,.12); border-radius:14px; padding:10px}
+    ul{margin:8px 0 0 18px; padding:0}
+    li{margin:6px 0}
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -125,6 +128,7 @@
     <div class="tabs" id="tabs"></div>
   </header>
 
+  <!-- LOGIN -->
   <section class="tab card" data-tab="login">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Login</h2>
     <div class="row">
@@ -143,10 +147,11 @@
     </div>
     <div class="muted" id="authMsg" style="margin-top:8px;"></div>
     <p class="footerNote" style="margin-top:10px;">
-      Tipp: Für euch zwei zwei Konten anlegen (E-Mail/Passwort). E-Mail-Bestätigung ist bei dir deaktiviert.
+      Tipp: Für euch zwei Konten (E-Mail/Passwort). E-Mail-Bestätigung ist bei dir deaktiviert.
     </p>
   </section>
 
+  <!-- HEUTE -->
   <section class="tab card hidden" data-tab="heute">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Heute – Schnelleingabe</h2>
 
@@ -170,6 +175,10 @@
       <div>
         <label id="lblHeatRosi">Wärme Gebäude 2 (kWh, Zähler)</label>
         <input id="heat_rosi_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 57804.0" />
+      </div>
+      <div>
+        <label id="lblHeatHouse">Wärme Wohnhaus (kWh, berechnet)</label>
+        <input id="heat_house_calc" type="text" disabled placeholder="wird automatisch berechnet" />
       </div>
       <div>
         <label>Strom Heizung gesamt (kWh, Zähler)</label>
@@ -221,6 +230,7 @@
     <div class="muted" id="todayMsg" style="margin-top:8px;"></div>
   </section>
 
+  <!-- EINTRÄGE -->
   <section class="tab card hidden" data-tab="eintraege">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Einträge</h2>
     <div class="row">
@@ -237,6 +247,7 @@
     <div class="list" id="entryList" style="margin-top:10px;"></div>
   </section>
 
+  <!-- AUSWERTUNG MONAT -->
   <section class="tab card hidden" data-tab="auswertung">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Auswertung (Monat)</h2>
     <div class="row">
@@ -244,21 +255,96 @@
         <label>Monat</label>
         <input id="anMonth" type="month" />
       </div>
+
+      <div>
+        <label>Diagramm-Kennzahl</label>
+        <select id="anMetric">
+          <option value="heat_breakdown">Wärme: Gesamt + Wohnhaus + Gebäude 2</option>
+          <option value="heat_total_kwh">Wärme gesamt (kWh)</option>
+          <option value="heat_rosi_kwh">Wärme Gebäude 2 (kWh)</option>
+          <option value="elec_heating_kwh">Strom Heizung (kWh)</option>
+          <option value="elec_pump_kwh">Strom Fernwärmeleitung (kWh)</option>
+          <option value="full_load_minutes">Vollaststunden (h)</option>
+          <option value="buffer_charges">Pufferladungen</option>
+          <option value="chips_kg_since_ash">Hackschnitzel Verbrauch (kg)</option>
+        </select>
+      </div>
+
       <div>
         <label>&nbsp;</label>
         <button id="btnAnalyze">Auswerten</button>
       </div>
     </div>
+
+    <div class="hr"></div>
+    <div id="monthWarn" class="warn hidden"></div>
+
     <div class="hr"></div>
     <div class="kpi" id="kpis"></div>
 
     <div class="hr"></div>
     <div class="card" style="margin:0; background:rgba(255,255,255,.03)">
-      <div class="muted" style="margin-bottom:8px;">Tagesverbrauch Wärme Gesamt (Option B: Lücken werden verteilt)</div>
+      <div class="muted" style="margin-bottom:8px;">Tageswerte (Option B: Lücken werden verteilt)</div>
       <canvas id="chartDaily"></canvas>
+    </div>
+
+    <div class="hr"></div>
+    <div>
+      <div class="muted">Heizkörper/FBH – Ein/Aus Zeiten (aus den Häkchen)</div>
+      <div id="statusMonth" class="muted" style="margin-top:8px;"></div>
     </div>
   </section>
 
+  <!-- AUSWERTUNG JAHR -->
+  <section class="tab card hidden" data-tab="jahr">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Auswertung (Jahr)</h2>
+
+    <div class="row">
+      <div>
+        <label>Jahr</label>
+        <select id="yearPick"></select>
+      </div>
+
+      <div>
+        <label>Diagramm-Kennzahl</label>
+        <select id="yearMetric">
+          <option value="heat_breakdown">Wärme: Gesamt + Wohnhaus + Gebäude 2</option>
+          <option value="heat_total_kwh">Wärme gesamt (kWh)</option>
+          <option value="heat_rosi_kwh">Wärme Gebäude 2 (kWh)</option>
+          <option value="elec_heating_kwh">Strom Heizung (kWh)</option>
+          <option value="elec_pump_kwh">Strom Fernwärmeleitung (kWh)</option>
+          <option value="full_load_minutes">Vollaststunden (h)</option>
+          <option value="buffer_charges">Pufferladungen</option>
+          <option value="chips_kg_since_ash">Hackschnitzel Verbrauch (kg)</option>
+        </select>
+      </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="btnYearAnalyze">Auswerten</button>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+    <div id="yearWarn" class="warn hidden"></div>
+
+    <div class="hr"></div>
+    <div class="kpi" id="yearKpis"></div>
+
+    <div class="hr"></div>
+    <div class="card" style="margin:0; background:rgba(255,255,255,.03)">
+      <div class="muted" style="margin-bottom:8px;">Monatswerte (Jan–Dez)</div>
+      <canvas id="chartYear"></canvas>
+    </div>
+
+    <div class="hr"></div>
+    <div>
+      <div class="muted">Heizkörper/FBH – Ein/Aus Zeiten (aus den Häkchen)</div>
+      <div id="statusYear" class="muted" style="margin-top:8px;"></div>
+    </div>
+  </section>
+
+  <!-- VERGLEICH -->
   <section class="tab card hidden" data-tab="vergleich">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Vergleich (Jahr A vs Jahr B)</h2>
     <div class="row">
@@ -271,17 +357,30 @@
         <select id="yearB"></select>
       </div>
       <div>
+        <label>Kennzahl</label>
+        <select id="cmpMetric">
+          <option value="heat_total_kwh">Wärme gesamt (kWh)</option>
+          <option value="heat_rosi_kwh">Wärme Gebäude 2 (kWh)</option>
+          <option value="elec_heating_kwh">Strom Heizung (kWh)</option>
+          <option value="elec_pump_kwh">Strom Fernwärmeleitung (kWh)</option>
+          <option value="full_load_minutes">Vollaststunden (h)</option>
+          <option value="buffer_charges">Pufferladungen</option>
+          <option value="chips_kg_since_ash">Hackschnitzel Verbrauch (kg)</option>
+        </select>
+      </div>
+      <div>
         <label>&nbsp;</label>
         <button id="btnCompare">Vergleichen</button>
       </div>
     </div>
     <div class="hr"></div>
     <div class="card" style="margin:0; background:rgba(255,255,255,.03)">
-      <div class="muted" style="margin-bottom:8px;">Wärme Gesamt (kWh / Monat)</div>
+      <div class="muted" style="margin-bottom:8px;">Monatswerte im Vergleich</div>
       <canvas id="chartCompare"></canvas>
     </div>
   </section>
 
+  <!-- KOSTEN -->
   <section class="tab card hidden" data-tab="kosten">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Heizjahr Kosten (04.09.–04.09.)</h2>
     <div class="row">
@@ -315,6 +414,7 @@
     <p class="footerNote" style="margin-top:10px;" id="costHint">Wärme Haus = Wärme Gesamt − Wärme Gebäude 2.</p>
   </section>
 
+  <!-- HACKS -->
   <section class="tab card hidden" data-tab="hacks">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Hackschnitzel – Häckseln</h2>
     <div class="row">
@@ -360,6 +460,7 @@
     <div class="list" id="chipList" style="margin-top:10px;"></div>
   </section>
 
+  <!-- SETTINGS -->
   <section class="tab card hidden" data-tab="settings">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Einstellungen</h2>
     <div class="row">
