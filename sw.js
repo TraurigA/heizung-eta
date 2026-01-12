@@ -1,4 +1,4 @@
-const CACHE = "heizlog-cache-v3";
+const CACHE = "heizlog-cache-v6";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./config.js", "./app.js", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
