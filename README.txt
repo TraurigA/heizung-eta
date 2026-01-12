@@ -1,23 +1,17 @@
-Heizungs-Logbuch (PWA) – Deploy auf GitHub Pages
+Heizungs-Logbuch – Komplett-Update (v3)
 
-1) GitHub Repository erstellen (z.B. "heizlog")
-2) Alle Dateien aus diesem Ordner ins Repo hochladen:
-   - index.html
-   - app.js
-   - config.js
-   - manifest.json
-   - sw.js
-   - icon-192.png
-   - icon-512.png
+Dieses ZIP enthält ALLE Dateien (index.html, app.js, config.js, manifest.json, sw.js, Icons).
 
-3) GitHub Pages aktivieren:
-   Repo -> Settings -> Pages
-   Source: Deploy from a branch
-   Branch: main
-   Folder: / (root)
+Neu in v3:
+- Heute: Feld "Wärme Wohnhaus (kWh, berechnet)" = Gesamt − Gebäude 2
+- Einträge-Liste: zeigt Wärme-Zählerstände inkl. Wohnhaus (berechnet)
+- Auswertung Monat/Jahr: Diagramm-Option "Wärme: Gesamt + Wohnhaus + Gebäude 2" (3 Kurven / 3 Balken)
+- Auswertungen bleiben vollständig: Wärme, Strom, Vollaststunden, Pufferladungen, Hackschnitzel, etc. – pro Monat & pro Jahr
 
-4) URL am iPhone in Safari öffnen -> Teilen -> "Zum Home-Bildschirm"
+Update im GitHub Repo (ohne Zeilensuche):
+- Öffne jede Datei (index.html / app.js / config.js / manifest.json / sw.js)
+- ✏️ Edit -> STRG+A -> STRG+V -> Inhalt aus ZIP einfügen -> Commit changes
 
-Hinweis:
-- Zwei Logins: in der App unter "Registrieren" zwei Accounts erstellen.
-- Daten sind pro Benutzer getrennt (RLS Policies).
+Wenn am iPhone noch alte Version angezeigt wird:
+- App schließen & neu öffnen, oder Safari-Seite neu laden
+- notfalls Website-Daten löschen / App neu hinzufügen (Service Worker Cache)
