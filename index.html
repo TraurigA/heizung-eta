@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Heizungs-Logbuch</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --card:#111a2e;
+      --muted:#93a4c7;
+      --text:#e7eefc;
+      --accent:#4f8cff;
+      --accent-r:79; --accent-g:140; --accent-b:255;
+      --danger:#ff4f6d;
+      --ok:#31d27c;
+      --line:#223052;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background:linear-gradient(180deg, #070b14 0%, var(--bg) 40%, #070b14 100%);
+      color:var(--text);
+      padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom) 12px;
+    }
+    header{
+      position:sticky; top:0; z-index:10;
+      background:rgba(7,11,20,.75); backdrop-filter: blur(10px);
+      border-bottom:1px solid rgba(255,255,255,.06);
+      padding: 10px 6px;
+      margin: 0 -12px 12px -12px;
+    }
+    h1{font-size:18px; margin:0 0 8px 0; font-weight:950}
+    .tabs{display:flex; gap:6px; overflow:auto; padding-bottom:6px; -webkit-overflow-scrolling: touch;}
+    .tabbtn{
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      padding:8px 10px;
+      border-radius:999px;
+      font-size:13px;
+      white-space:nowrap;
+    }
+    .tabbtn.active{background:rgba(var(--accent-r),var(--accent-g),var(--accent-b),.22); border-color:rgba(var(--accent-r),var(--accent-g),var(--accent-b),.45)}
+    .card{
+      background:rgba(17,26,46,.88);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:16px;
+      padding:12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      margin-bottom:12px;
+    }
+    label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+    input, select, button, textarea{
+      width:100%;
+      padding:10px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(255,255,255,.05);
+      color:var(--text);
+      outline:none;
+      font-size:14px;
+    }
+    input[type="datetime-local"]{padding:9px 10px}
+    button{
+      cursor:pointer;
+      background:rgba(var(--accent-r),var(--accent-g),var(--accent-b),.22);
+      border-color:rgba(var(--accent-r),var(--accent-g),var(--accent-b),.45);
+      font-weight:900;
+    }
+    button.secondary{background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.10)}
+    button.danger{background:rgba(255,79,109,.18); border-color:rgba(255,79,109,.40)}
+    button.ok{background:rgba(49,210,124,.16); border-color:rgba(49,210,124,.40)}
+    .grid{display:grid; gap:10px}
+    .grid.two{grid-template-columns: 1fr 1fr}
+    .row{display:flex; gap:8px; flex-wrap:wrap}
+    .row > *{flex:1 1 160px}
+    .muted{color:var(--muted); font-size:13px}
+    .hr{height:1px; background:rgba(255,255,255,.08); margin:12px 0}
+    .hidden{display:none !important}
+    .kpi{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+    .kpi .box{border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.04); border-radius:14px; padding:10px;}
+    .kpi .v{font-size:18px; font-weight:950}
+    .kpi .k{font-size:12px; color:var(--muted)}
+    .list{display:flex; flex-direction:column; gap:8px}
+    .item{border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.04); border-radius:14px; padding:10px;
+      display:flex; gap:10px; align-items:flex-start; justify-content:space-between;}
+    .item strong{font-size:14px}
+    .item small{display:block; color:var(--muted); margin-top:2px}
+    .topbar{display:flex; gap:8px; align-items:center; justify-content:space-between}
+    canvas{width:100%; max-height:320px}
+    .footerNote{font-size:12px; color:var(--muted); line-height:1.4}
+    .checkboxes{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+    .checkboxes label{display:flex; gap:8px; align-items:center; margin:0; font-size:13px; color:var(--text)}
+    .checkboxes input{width:auto}
+    .badge{display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px;
+      background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); color:var(--muted);}
+    .warn{border:1px solid rgba(255,176,32,.35); background:rgba(255,176,32,.12); border-radius:14px; padding:10px}
+    ul{margin:8px 0 0 18px; padding:0}
+    li{margin:6px 0}
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="config.js"></script>
+  <script defer src="app.js"></script>
+</head>
+
+<body>
+  <header>
+    <div class="topbar">
+      <div>
+        <h1>Heizungs-Logbuch</h1>
+        <div class="muted" id="whoami"></div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span class="badge" id="syncBadge">offline</span>
+        <button class="secondary" id="btnLogout" style="width:auto;">Logout</button>
+      </div>
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </header>
+
+  <!-- LOGIN -->
+  <section class="tab card" data-tab="login">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Login</h2>
+    <div class="row">
+      <div>
+        <label>E-Mail</label>
+        <input id="authEmail" type="email" placeholder="name@example.com" />
+      </div>
+      <div>
+        <label>Passwort</label>
+        <input id="authPass" type="password" placeholder="••••••••" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <button id="btnLogin">Einloggen</button>
+      <button class="secondary" id="btnSignup">Registrieren</button>
+    </div>
+    <div class="muted" id="authMsg" style="margin-top:8px;"></div>
+    <p class="footerNote" style="margin-top:10px;">
+      Tipp: Für euch zwei Konten (E-Mail/Passwort). E-Mail-Bestätigung ist bei dir deaktiviert.
+    </p>
+  </section>
+
+  <!-- HEUTE -->
+  <section class="tab card hidden" data-tab="heute">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Heute – Schnelleingabe</h2>
+
+    <div class="row">
+      <div>
+        <label>Datum</label>
+        <input id="day" type="date" />
+      </div>
+      <div>
+        <label>Uhrzeit (optional)</label>
+        <input id="time" type="time" />
+      </div>
+    </div>
+
+    <div class="hr"></div>
+    <div class="grid two">
+      <div>
+        <label id="lblHeatTotal">Wärme gesamt (kWh, Zähler)</label>
+        <input id="heat_total_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 186361.5" />
+      </div>
+      <div>
+        <label id="lblHeatRosi">Wärme Gebäude 2 (kWh, Zähler)</label>
+        <input id="heat_rosi_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 57804.0" />
+      </div>
+      <div>
+        <label id="lblHeatHouse">Wärme Wohnhaus (kWh, berechnet)</label>
+        <input id="heat_house_calc" type="text" disabled placeholder="wird automatisch berechnet" />
+      </div>
+      <div>
+        <label>Strom Heizung gesamt (kWh, Zähler)</label>
+        <input id="elec_heating_kwh" type="number" step="0.01" inputmode="decimal" placeholder="z.B. 12345.67" />
+      </div>
+      <div>
+        <label>Strom Fernwärmeleitung (kWh, Zähler) – optional</label>
+        <input id="elec_pump_kwh" type="number" step="0.01" inputmode="decimal" placeholder="z.B. 234.12" />
+      </div>
+      <div>
+        <label>Vollaststunden (h)</label>
+        <input id="full_h" type="number" step="1" inputmode="numeric" placeholder="z.B. 2994" />
+      </div>
+      <div>
+        <label>Vollaststunden (min)</label>
+        <input id="full_m" type="number" step="1" inputmode="numeric" placeholder="z.B. 0" />
+      </div>
+      <div>
+        <label>Pufferladungen (Zähler)</label>
+        <input id="buffer_charges" type="number" step="1" inputmode="numeric" placeholder="z.B. 1038" />
+      </div>
+      <div>
+        <label>Hackschnitzel seit Asche (kg, Zähler)</label>
+        <input id="chips_kg_since_ash" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 343.0" />
+      </div>
+      <div>
+        <label>Temperatur ~18:00 (°C)</label>
+        <input id="temp_c" type="number" step="0.1" inputmode="decimal" placeholder="z.B. -4.8" />
+      </div>
+      <div>
+        <label>Notiz (optional)</label>
+        <input id="note" placeholder="z.B. Asche geleert, Abwesenheit, etc." />
+      </div>
+    </div>
+
+    <div class="hr"></div>
+    <div class="checkboxes">
+      <label><input type="checkbox" id="hk_house" /> Heizkörper Haus an</label>
+      <label><input type="checkbox" id="hk_rosi" /> Heizkörper Gebäude 2 an</label>
+      <label><input type="checkbox" id="fbh_rosi" /> FBH Gebäude 2 an</label>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <button class="ok" id="btnSaveToday">Speichern</button>
+      <button class="secondary" id="btnLoadToday">Heute laden</button>
+      <button class="danger" id="btnAsh">Asche entleert (Event)</button>
+    </div>
+
+    <div class="muted" id="todayMsg" style="margin-top:8px;"></div>
+  </section>
+
+  <!-- EINTRÄGE -->
+  <section class="tab card hidden" data-tab="eintraege">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Einträge</h2>
+    <div class="row">
+      <div>
+        <label>Monat</label>
+        <input id="monthPick" type="month" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button class="secondary" id="btnLoadMonth">Liste laden</button>
+      </div>
+    </div>
+    <div class="muted" id="monthInfo" style="margin-top:8px;"></div>
+    <div class="list" id="entryList" style="margin-top:10px;"></div>
+  </section>
+
+  <!-- AUSWERTUNG MONAT -->
+  <section class="tab card hidden" data-tab="auswertung">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Auswertung (Monat)</h2>
+    <div class="row">
+      <div>
+        <label>Monat</label>
+        <input id="anMonth" type="month" />
+      </div>
+
+      <div>
+        <label>Diagramm-Kennzahl</label>
+        <select id="anMetric">
+          <option value="heat_breakdown">Wärme: Gesamt + Wohnhaus + Gebäude 2</option>
+          <option value="heat_total_kwh">Wärme gesamt (kWh)</option>
+          <option value="heat_rosi_kwh">Wärme Gebäude 2 (kWh)</option>
+          <option value="elec_heating_kwh">Strom Heizung (kWh)</option>
+          <option value="elec_pump_kwh">Strom Fernwärmeleitung (kWh)</option>
+          <option value="full_load_minutes">Vollaststunden (h)</option>
+          <option value="buffer_charges">Pufferladungen</option>
+          <option value="chips_kg_since_ash">Hackschnitzel Verbrauch (kg)</option>
+        </select>
+      </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="btnAnalyze">Auswerten</button>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+    <div id="monthWarn" class="warn hidden"></div>
+
+    <div class="hr"></div>
+    <div class="kpi" id="kpis"></div>
+
+    <div class="hr"></div>
+    <div class="card" style="margin:0; background:rgba(255,255,255,.03)">
+      <div class="muted" style="margin-bottom:8px;">Tageswerte (Option B: Lücken werden verteilt)</div>
+      <canvas id="chartDaily"></canvas>
+    </div>
+
+    <div class="hr"></div>
+    <div>
+      <div class="muted">Heizkörper/FBH – Ein/Aus Zeiten (aus den Häkchen)</div>
+      <div id="statusMonth" class="muted" style="margin-top:8px;"></div>
+    </div>
+  </section>
+
+  <!-- AUSWERTUNG JAHR -->
+  <section class="tab card hidden" data-tab="jahr">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Auswertung (Jahr)</h2>
+
+    <div class="row">
+      <div>
+        <label>Jahr</label>
+        <select id="yearPick"></select>
+      </div>
+
+      <div>
+        <label>Diagramm-Kennzahl</label>
+        <select id="yearMetric">
+          <option value="heat_breakdown">Wärme: Gesamt + Wohnhaus + Gebäude 2</option>
+          <option value="heat_total_kwh">Wärme gesamt (kWh)</option>
+          <option value="heat_rosi_kwh">Wärme Gebäude 2 (kWh)</option>
+          <option value="elec_heating_kwh">Strom Heizung (kWh)</option>
+          <option value="elec_pump_kwh">Strom Fernwärmeleitung (kWh)</option>
+          <option value="full_load_minutes">Vollaststunden (h)</option>
+          <option value="buffer_charges">Pufferladungen</option>
+          <option value="chips_kg_since_ash">Hackschnitzel Verbrauch (kg)</option>
+        </select>
+      </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="btnYearAnalyze">Auswerten</button>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+    <div id="yearWarn" class="warn hidden"></div>
+
+    <div class="hr"></div>
+    <div class="kpi" id="yearKpis"></div>
+
+    <div class="hr"></div>
+    <div class="card" style="margin:0; background:rgba(255,255,255,.03)">
+      <div class="muted" style="margin-bottom:8px;">Monatswerte (Jan–Dez)</div>
+      <canvas id="chartYear"></canvas>
+    </div>
+
+    <div class="hr"></div>
+    <div>
+      <div class="muted">Heizkörper/FBH – Ein/Aus Zeiten (aus den Häkchen)</div>
+      <div id="statusYear" class="muted" style="margin-top:8px;"></div>
+    </div>
+  </section>
+
+  <!-- VERGLEICH -->
+  <section class="tab card hidden" data-tab="vergleich">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Vergleich (Jahr A vs Jahr B)</h2>
+    <div class="row">
+      <div>
+        <label>Jahr A</label>
+        <select id="yearA"></select>
+      </div>
+      <div>
+        <label>Jahr B</label>
+        <select id="yearB"></select>
+      </div>
+      <div>
+        <label>Kennzahl</label>
+        <select id="cmpMetric">
+          <option value="heat_total_kwh">Wärme gesamt (kWh)</option>
+          <option value="heat_rosi_kwh">Wärme Gebäude 2 (kWh)</option>
+          <option value="elec_heating_kwh">Strom Heizung (kWh)</option>
+          <option value="elec_pump_kwh">Strom Fernwärmeleitung (kWh)</option>
+          <option value="full_load_minutes">Vollaststunden (h)</option>
+          <option value="buffer_charges">Pufferladungen</option>
+          <option value="chips_kg_since_ash">Hackschnitzel Verbrauch (kg)</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="btnCompare">Vergleichen</button>
+      </div>
+    </div>
+    <div class="hr"></div>
+    <div class="card" style="margin:0; background:rgba(255,255,255,.03)">
+      <div class="muted" style="margin-bottom:8px;">Monatswerte im Vergleich</div>
+      <canvas id="chartCompare"></canvas>
+    </div>
+  </section>
+
+  <!-- KOSTEN -->
+  <section class="tab card hidden" data-tab="kosten">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Heizjahr Kosten (04.09.–04.09.)</h2>
+    <div class="row">
+      <div>
+        <label>Heizjahr Start (04.09.YYYY)</label>
+        <input id="hyStart" type="date" />
+      </div>
+      <div>
+        <label>ct/kWh (für dieses Heizjahr)</label>
+        <input id="ctPerKwh" type="number" step="0.01" inputmode="decimal" placeholder="z.B. 12.50" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button class="ok" id="btnSavePrice">Preis speichern</button>
+      </div>
+    </div>
+    <div class="muted" id="costMsg" style="margin-top:8px;"></div>
+
+    <div class="hr"></div>
+    <div class="row">
+      <div>
+        <label>Heizjahr auswerten (Startdatum wählen)</label>
+        <input id="hyPick" type="date" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="btnCalcHY">Berechnen</button>
+      </div>
+    </div>
+    <div class="kpi" id="hyKpis" style="margin-top:12px;"></div>
+    <p class="footerNote" style="margin-top:10px;" id="costHint">Wärme Haus = Wärme Gesamt − Wärme Gebäude 2.</p>
+  </section>
+
+  <!-- HACKS -->
+  <section class="tab card hidden" data-tab="hacks">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Hackschnitzel – Häckseln</h2>
+    <div class="row">
+      <div>
+        <label>Datum/Zeit</label>
+        <input id="chipTs" type="datetime-local" />
+      </div>
+      <div>
+        <label>Menge (Ster/RM)</label>
+        <input id="chipSter" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 25.0" />
+      </div>
+      <div>
+        <label>Kosten (€)</label>
+        <input id="chipCost" type="number" step="0.01" inputmode="decimal" placeholder="z.B. 350.00" />
+      </div>
+      <div>
+        <label>Wer</label>
+        <input id="chipWho" placeholder="z.B. Firma X" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label>Notiz</label>
+        <input id="chipNote" placeholder="optional" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button class="ok" id="btnAddChipping">Häcksel-Event speichern</button>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+    <div class="row">
+      <div>
+        <label>Liste laden: Monat</label>
+        <input id="chipMonth" type="month" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button class="secondary" id="btnLoadChipping">Liste laden</button>
+      </div>
+    </div>
+    <div class="list" id="chipList" style="margin-top:10px;"></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="tab card hidden" data-tab="settings">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Einstellungen</h2>
+    <div class="row">
+      <div>
+        <label>Name Gebäude 1</label>
+        <input id="nameHouse" />
+      </div>
+      <div>
+        <label>Name Gebäude 2</label>
+        <input id="nameRosi" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label>Akzentfarbe</label>
+        <select id="accent">
+          <option value="#4f8cff">Blau</option>
+          <option value="#31d27c">Grün</option>
+          <option value="#ffb020">Orange</option>
+          <option value="#b56bff">Violett</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button class="ok" id="btnSaveSettings">Speichern</button>
+      </div>
+    </div>
+    <div class="muted" id="settingsMsg" style="margin-top:8px;"></div>
+
+    <div class="hr"></div>
+    <button class="secondary" id="btnExportJson">JSON Backup exportieren</button>
+  </section>
+
+<script>
+  if("serviceWorker" in navigator){
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  }
+</script>
+</body>
+</html>
