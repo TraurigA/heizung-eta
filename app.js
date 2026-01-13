@@ -6,34 +6,35 @@
   const APP_VERSION = (cfg && cfg.appVersion) ? String(cfg.appVersion) : "3.2.2";
   const BUILD_DATE = (cfg && cfg.buildDate) ? String(cfg.buildDate) : "2026-01-13";
   const CHANGELOG = [
-  {
-    "v": "3.3.0",
-    "date": "2026-01-13",
-    "items": [
-      "Jahresauswertung repariert (analyzeYear) und stabilisiert",
-      "Diagrammtyp Balken/Linie für Monat/Jahr/Vergleich",
-      "Vergleich erweitert: Wärme Wohnhaus separat auswählbar (abgeleitet aus Gesamt–Rosi)",
-      "Einträge: nur Datum + Tags; Sortierung ältester oben",
-      "Namen aus Einstellungen überall übernommen (Gebäude 2 -> Rosi, Wohnhaus-Name)",
-      "Gesamtübersicht in Blöcke unterteilt (Wärme/Strom/Betrieb/Hackschnitzel)"
-    ]
-  },
-  {
-    "v": "3.2.8",
-    "date": "2026-01-13",
-    "items": [
-      "Stabile Startbasis; App crasht nicht still",
-      "Monatsauswertung robust; Cache Reset"
-    ]
-  },
-  {
-    "v": "3.2.2",
-    "date": "2026-01-13",
-    "items": [
-      "Gesamtübersicht erweitert; Schaltzeiträume; Heizjahr-Logik; Wartung (optional)"
-    ]
-  }
-];
+    {
+      "v": "3.3.0",
+      "date": "2026-01-13",
+      "items": [
+        "Jahresauswertung repariert (analyzeYear) und stabilisiert",
+        "Diagrammtyp Balken/Linie für Monat/Jahr/Vergleich",
+        "Vergleich erweitert: Wärme Wohnhaus separat auswählbar (abgeleitet aus Gesamt–Rosi)",
+        "Einträge: nur Datum + Tags; Sortierung ältester oben",
+        "Namen aus Einstellungen überall übernommen (Gebäude 2 -> Rosi, Wohnhaus-Name)",
+        "Gesamtübersicht in Blöcke unterteilt (Wärme/Strom/Betrieb/Hackschnitzel)"
+      ]
+    },
+    {
+      "v": "3.2.8",
+      "date": "2026-01-13",
+      "items": [
+        "Stabile Startbasis; App crasht nicht still",
+        "Monatsauswertung robust; Cache Reset"
+      ]
+    },
+    {
+      "v": "3.2.2",
+      "date": "2026-01-13",
+      "items": [
+        "Gesamtübersicht erweitert; Schaltzeiträume; Heizjahr-Logik; Wartung (optional)"
+      ]
+    }
+  ];
+
   const supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
   let session = null;
@@ -108,9 +109,9 @@
 
     $("lblHeatRosi").textContent = `Wärme ${s.rosiName} (kWh, Zähler)`;
     $("lblHeatTotal").textContent = `Wärme gesamt (kWh, Zähler)`;
-        const lblHouse = $("lblHeatHouse");
+    const lblHouse = $("lblHeatHouse");
     if(lblHouse) lblHouse.textContent = `Wärme ${s.houseName} (kWh, berechnet)`;
-if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${s.rosiName}.`;
+    if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${s.rosiName}.`;
 
     const cbLabels = document.querySelectorAll(".checkboxes label");
     if(cbLabels.length >= 3){
@@ -118,7 +119,7 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
       cbLabels[1].lastChild.textContent = ` Heizkörper ${s.rosiName} an`;
       cbLabels[2].lastChild.textContent = ` FBH ${s.rosiName} an`;
     }
-  
+
     // Update metric option labels to use configured names (z.B. Gebäude 2 -> Rosi)
     const rosi = s.rosiName || "Gebäude 2";
     const house = s.houseName || "Wohnhaus";
@@ -132,8 +133,7 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
           .replaceAll("Wohnhaus", house);
       }
     }
-
-}
+  }
 
   // live derived field (Wohnhaus Wärme Zähler)
   function updateDerivedHeat(){
@@ -153,8 +153,8 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
     {id:"eintraege", label:"Einträge"},
     {id:"auswertung", label:"Monatsauswertung"},
     {id:"jahr", label:"Jahresauswertung"},
-        {id:"gesamt", label:"Gesamt"},
-{id:"vergleich", label:"Vergleich"},
+    {id:"gesamt", label:"Gesamt"},
+    {id:"vergleich", label:"Vergleich"},
     {id:"kosten", label:"Kosten"},
     {id:"hacks", label:"Hackschnitzel"},
     {id:"settings", label:"Einstellungen"},
@@ -207,9 +207,9 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
       buildTabs();
       showTab((()=>{try{return localStorage.getItem("heizlog_last_tab")||"heute"}catch(_){return "heute"}})());
       renderChangelog();
-    initChartTypeSelect("anChartType","chartType.month");
-    initChartTypeSelect("yearChartType","chartType.year");
-    initChartTypeSelect("cmpChartType","chartType.compare");
+      initChartTypeSelect("anChartType","chartType.month");
+      initChartTypeSelect("yearChartType","chartType.year");
+      initChartTypeSelect("cmpChartType","chartType.compare");
 
       // default maintenance date = today
       if($("maintDate")) $("maintDate").value = toISODate(new Date());
@@ -276,7 +276,6 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
     return await fetchDailyRange(toISODate(start), toISODate(end));
   }
 
-  
   async function fetchDailyByDay(dayISO){
     const { data, error } = await supabase
       .from("daily_readings")
@@ -320,7 +319,7 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
     return data || [];
   }
 
-async function fetchChippingRange(startISO, endISO){
+  async function fetchChippingRange(startISO, endISO){
     const { data, error } = await supabase
       .from("chipping_events")
       .select("*")
@@ -405,7 +404,6 @@ async function fetchChippingRange(startISO, endISO){
   }
 
   function sum(arr){ return arr.reduce((a,b)=>a+b,0); }
-  function max(arr){ return arr.reduce((m,v)=>v>m?v:m, -Infinity); }
 
   // ---------- Status analysis (checkboxes) ----------
   function statusSummary(rows){
@@ -480,8 +478,7 @@ async function fetchChippingRange(startISO, endISO){
   }
 
   // ---------- Month analysis ----------
-    async function analyzeMonth(monthStr){
-    // Robust monthly analysis: tolerant to missing fields, renders into chartDaily + statusMonth
+  async function analyzeMonth(monthStr){
     const {start, end} = monthStartEnd(monthStr);
     const padStart = new Date(start.getFullYear(), start.getMonth(), start.getDate()-40);
     const padEnd   = new Date(end.getFullYear(), end.getMonth(), end.getDate()+40);
@@ -560,9 +557,9 @@ async function fetchChippingRange(startISO, endISO){
       datasets = [{ label:`${metricLabel[metric] || "Kennzahl"} – ${y}`, data: series.map(v=>Number((+v||0).toFixed(2))) }];
     }
 
-    // render chart
     if(window.monthChart) window.monthChart.destroy();
-    window.monthChart = new Chart($("chartDaily"), { type:getChartType("anChartType","chartType.month"),
+    window.monthChart = new Chart($("chartDaily"), {
+      type:getChartType("anChartType","chartType.month"),
       data:{ labels, datasets },
       options:{
         responsive:true,
@@ -575,14 +572,13 @@ async function fetchChippingRange(startISO, endISO){
       }
     });
 
-    // status
     $("statusMonth").innerHTML = statusSummary(readings);
     const warn = $("monthWarn");
     if(warn){ warn.classList.add("hidden"); warn.innerHTML=""; }
   }
 
-  // ---------- Comparison (metric selectable) ----------
-    async function analyzeYear(yearStr){
+  // ---------- Year analysis ----------
+  async function analyzeYear(yearStr){
     const y = Number(yearStr);
     if(!y || isNaN(y)) throw new Error("Ungültiges Jahr");
     const padStart = new Date(y,0,1-50);
@@ -667,7 +663,7 @@ async function fetchChippingRange(startISO, endISO){
     $("statusYear").innerHTML = statusSummary(readings);
   }
 
-async function compareYears(yearA, yearB){
+  async function compareYears(yearA, yearB){
     const metric = $("cmpMetric")?.value || "heat_total_kwh";
     const years = [yearA, yearB].map(Number);
     const minY = Math.min(...years), maxY = Math.max(...years);
@@ -701,7 +697,7 @@ async function compareYears(yearA, yearB){
 
     if(compareChart) compareChart.destroy();
     compareChart = new Chart($("chartCompare"), {
-      type:"bar",
+      type:getChartType("cmpChartType","chartType.compare"),
       data:{
         labels:["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],
         datasets:[
@@ -722,7 +718,6 @@ async function compareYears(yearA, yearB){
 
   // ---------- Heizjahr cost ----------
   async function calcHeizjahr(hyStartISO){
-    const y = Number(String(hyStartISO).slice(0,4));
     const start = parseISODate(hyStartISO);
     const {start:hs, end:he} = heatingYearRange(start);
     const padStart = new Date(hs.getFullYear(), hs.getMonth(), hs.getDate()-50);
@@ -880,7 +875,6 @@ async function compareYears(yearA, yearB){
 
   async function loadMonthList(monthStr){
     const rows = await fetchDailyMonth(monthStr);
-    const s = loadSettings();
     $("monthInfo").textContent = `${rows.length} Einträge gefunden.`;
     const list = $("entryList");
     list.innerHTML = "";
@@ -1013,7 +1007,6 @@ async function compareYears(yearA, yearB){
     a.remove();
   }
 
-  // ---------- Wiring ----------
   // ---------- Changelog ----------
   function renderChangelog(){
     const box = $("changelogBox");
@@ -1039,20 +1032,16 @@ async function compareYears(yearA, yearB){
     return (v==="line") ? "line" : "bar";
   }
 
-
   // ---------- Service Worker hard reload ----------
   async function hardReload(){
-    // Clear caches
     if("caches" in window){
       const keys = await caches.keys();
       await Promise.all(keys.map(k => caches.delete(k)));
     }
-    // Unregister SW
     if("serviceWorker" in navigator){
       const regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.map(r => r.unregister()));
     }
-    // Force reload (bypass cache)
     const url = new URL(location.href);
     url.searchParams.set("v", APP_VERSION);
     url.searchParams.set("t", String(Date.now()));
@@ -1089,7 +1078,6 @@ async function compareYears(yearA, yearB){
           const pd = parseISODate(prevDay);
           const cd = parseISODate(d);
           if(dayDiff(pd, cd) !== 1){
-            // gap -> close previous interval at prevDay
             out.push({start:curStart, end:prevDay, days: dayDiff(parseISODate(curStart), parseISODate(prevDay))+1});
             curStart = d;
           }
@@ -1133,7 +1121,7 @@ async function compareYears(yearA, yearB){
       if(a[field]==null || b[field]==null) continue;
       let delta = Number(b[field]) - Number(a[field]);
       if(allowResetToCurrent && delta < 0){
-        delta = Number(b[field]); // treat reset as restart
+        delta = Number(b[field]);
       }
       if(delta > 0) total += delta;
     }
@@ -1175,7 +1163,6 @@ async function compareYears(yearA, yearB){
       return;
     }
 
-    // Verbrauch über positive Deltas (Zählerstände)
     const heatTotal = sumPositiveDeltas(rows, "heat_total_kwh");
     const heatRosi  = sumPositiveDeltas(rows, "heat_rosi_kwh");
     const heatHouse = Math.max(0, heatTotal - heatRosi);
@@ -1184,26 +1171,13 @@ async function compareYears(yearA, yearB){
     const elecPump = sumPositiveDeltas(rows, "elec_pump_kwh");
     const chipsTot = sumPositiveDeltas(rows, "chips_kg_since_ash", true);
 
-    // Zählerstände (nicht summieren)
     const fullMin = lastValue(rows, "full_load_minutes");
     const bufferZ = lastValue(rows, "buffer_charges");
 
     const daysWithEntry = rows.length;
-
     const s = loadSettings();
 
-    const kpis = [
-      {k:"Wärme gesamt (kWh)", v: heatTotal ? fmt1(heatTotal) : "—"},
-      {k:`Wärme ${s.houseName} (kWh)`, v: heatHouse ? fmt1(heatHouse) : "—"},
-      {k:`Wärme ${s.rosiName} (kWh)`, v: heatRosi ? fmt1(heatRosi) : "—"},
-      {k:"Strom Heizung (kWh)", v: elecHeat ? fmt1(elecHeat) : "—"},
-      {k:"Strom Fernwärmeleitung (kWh)", v: elecPump ? fmt1(elecPump) : "—"},
-      {k:"Hackschnitzel gesamt (kg)", v: chipsTot ? fmt1(chipsTot) : "—"},
-      {k:"Vollaststunden (Zählerstand)", v: fmtHM(fullMin)},
-      {k:"Pufferladungen (Zählerstand)", v: (bufferZ==null ? "—" : fmt0(bufferZ))},
-      {k:"Tage mit Eintrag", v: String(daysWithEntry)},
-    ];
-        function kpiBoxes(items){
+    function kpiBoxes(items){
       return items.map(x=>`<div class="kpiBox"><div class="k">${x.k}</div><div class="v">${x.v}</div></div>`).join("");
     }
 
@@ -1246,7 +1220,8 @@ async function compareYears(yearA, yearB){
         <div class="kpi">${kpiBoxes(chipsItems)}</div>
       </div>
     `;
-// Heizjahr (fix ab 04.09.)
+
+    // Heizjahr (fix ab 04.09.)
     const now = new Date();
     const hyStart = heatingYearStartFor(now);
     const hyLabel = `${hyStart.getFullYear()}/${String(hyStart.getFullYear()+1).slice(-2)}`;
@@ -1273,28 +1248,74 @@ async function compareYears(yearA, yearB){
       </div>
     `;
 
-    // Schaltzeiträume (gesamt)
     $("switchBoxGesamt").innerHTML = renderIntervalsHTML(rows);
   }
 
+  // ✅✅✅ WARTUNGEN: JETZT IN DER APP SICHTBAR (NEU) ✅✅✅
   async function renderMaintenanceList(){
+    const box = $("maintList");  // muss in index.html existieren
     const msg = $("maintMsg");
+
+    if(msg) msg.textContent = "";
+    if(!box) return; // falls index.html noch nicht aktualisiert ist
+
     try{
       const events = await fetchMaintenanceEvents();
-      // show latest in heizjahrBox? keep simple: list in changelogBox? We'll append in maintMsg if no dedicated area.
-      // For now, just keep silent.
-      if(msg && events.length){
-        // no-op
+
+      if(!events.length){
+        box.innerHTML = `<div class="muted">Noch keine Wartungen gespeichert.</div>`;
+        return;
       }
+
+      const fmtDay = (iso) => {
+        try { return new Intl.DateTimeFormat("de-DE").format(new Date(iso + "T00:00:00")); }
+        catch { return iso; }
+      };
+
+      const fmtTs = (ts) => {
+        if(!ts) return "—";
+        try {
+          return new Intl.DateTimeFormat("de-DE", { dateStyle:"medium", timeStyle:"medium" }).format(new Date(ts));
+        } catch {
+          return ts;
+        }
+      };
+
+      box.innerHTML = events.map(ev => {
+        const note = ev.note ? escapeHtml(ev.note) : `<span class="muted">(keine Notiz)</span>`;
+
+        const snapHtml = ev.snapshot
+          ? `<details style="margin-top:8px;">
+               <summary>Snapshot (gespeicherte Daten) anzeigen</summary>
+               <pre style="white-space:pre-wrap; margin:8px 0 0 0;">${escapeHtml(JSON.stringify(ev.snapshot, null, 2))}</pre>
+             </details>`
+          : `<div class="muted" style="margin-top:8px;">Snapshot: (kein Snapshot gespeichert)</div>`;
+
+        return `
+          <div style="padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:14px; margin:10px 0; background:rgba(255,255,255,.03);">
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline;">
+              <div><strong>${escapeHtml(fmtDay(ev.day))}</strong></div>
+              <div class="muted">ID: ${escapeHtml(ev.id)}</div>
+            </div>
+
+            <div style="margin-top:6px;">${note}</div>
+
+            <div class="muted" style="margin-top:6px;">
+              gespeichert: ${escapeHtml(fmtTs(ev.ts))}
+            </div>
+
+            ${snapHtml}
+          </div>
+        `;
+      }).join("");
+
     }catch(e){
-      // If table doesn't exist, give a helpful hint once.
-      if(msg){
-        msg.textContent = "Hinweis: Für Wartungen brauchst du eine Supabase-Tabelle 'maintenance_events' (siehe README).";
-      }
+      if(msg) msg.textContent = e.message || String(e);
+      box.innerHTML = `<div class="muted">Wartungen konnten nicht geladen werden.</div>`;
     }
   }
 
-async function init(){
+  async function init(){
     applySettings();
     setTodayDefaults();
 
@@ -1394,8 +1415,6 @@ async function init(){
       }
     });
 
-
-
     $("btnAnalyze").addEventListener("click", async () => {
       $("kpis").innerHTML = "";
       $("statusMonth").innerHTML = "";
@@ -1479,11 +1498,10 @@ async function init(){
 
     await refreshSession();
     updateDerivedHeat();
-}
+  }
 
-    // derived calc listeners
-    $("heat_total_kwh")?.addEventListener("input", updateDerivedHeat);
-    $("heat_rosi_kwh")?.addEventListener("input", updateDerivedHeat);
+  $("heat_total_kwh")?.addEventListener("input", updateDerivedHeat);
+  $("heat_rosi_kwh")?.addEventListener("input", updateDerivedHeat);
 
-document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("DOMContentLoaded", init);
 })();
