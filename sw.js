@@ -1,5 +1,5 @@
-// Heizungs-Logbuch Service Worker (v3.2.4)
-const VERSION = "3.2.4";
+// Heizungs-Logbuch Service Worker (v3.2.6)
+const VERSION = "3.2.6";
 const CACHE = `heizlog-cache-${VERSION}`;
 
 // Minimal app shell. We avoid over-caching API calls.

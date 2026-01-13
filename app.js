@@ -532,52 +532,62 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
       <div class="box"><div class="v">${x.v}</div><div class="k">${x.k}</div></div>
     `).join("");
 
-    // chart
-    const metric = $("yearMetric")?.value || "heat_total_kwh";
+    // chart (Tageswerte)
+    const metric = $("anMetric")?.value || "heat_breakdown";
 
-    const labels = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+    const daysInMonth = new Date(start.getFullYear(), start.getMonth()+1, 0).getDate();
+    const labels = Array.from({length: daysInMonth}, (_,i)=> String(i+1));
 
-    let datasets = [];
-    if(metric === "heat_breakdown"){
-      datasets = [
-        { label:`Wärme Gesamt (kWh) – ${y}`, data: heatTot.map(v=>Number((+v).toFixed(2))) },
-        { label:`Wärme ${s.houseName} (kWh) – ${y}`, data: heatHouse.map(v=>Number((+v).toFixed(2))) },
-        { label:`Wärme ${s.rosiName} (kWh) – ${y}`, data: heatRosi.map(v=>Number((+v).toFixed(2))) },
-      ];
-    }else{
-      const series = monthlyTotals(metric);
-      const metricLabel = {
-        heat_total_kwh: "Wärme gesamt (kWh)",
-        heat_rosi_kwh: `Wärme ${s.rosiName} (kWh)`,
-        elec_heating_kwh: "Strom Heizung (kWh)",
-        elec_pump_kwh: "Strom Fernwärmeleitung (kWh)",
-        full_load_minutes: "Vollaststunden (h)",
-        buffer_charges: "Pufferladungen",
-        chips_kg_since_ash: "Hackschnitzel Verbrauch (kg)",
-      }[metric] || "Wärme gesamt (kWh)";
-
-      datasets = [{ label:`${metricLabel} – ${y}`, data: series.map(v=>Number((+v).toFixed(2))) }];
+    function seriesForMetric(){
+      switch(metric){
+        case "heat_breakdown":
+          return {
+            datasets: [
+              { label: `Wärme Gesamt (kWh)`, data: dailyHeatTotal.map(v=>Number((+(v||0)).toFixed(2))) },
+              { label: `Wärme ${s.houseName} (kWh)`, data: dailyHeatHouse.map(v=>Number((+(v||0)).toFixed(2))) },
+              { label: `Wärme ${s.rosiName} (kWh)`, data: dailyHeatRosi.map(v=>Number((+(v||0)).toFixed(2))) },
+            ]
+          };
+        case "heat_total_kwh":
+          return { datasets: [{ label: "Wärme gesamt (kWh)", data: dailyHeatTotal.map(v=>Number((+(v||0)).toFixed(2))) }] };
+        case "heat_rosi_kwh":
+          return { datasets: [{ label: `Wärme ${s.rosiName} (kWh)`, data: dailyHeatRosi.map(v=>Number((+(v||0)).toFixed(2))) }] };
+        case "elec_heating_kwh":
+          return { datasets: [{ label: "Strom Heizung (kWh)", data: dailyElecHeat.map(v=>Number((+(v||0)).toFixed(2))) }] };
+        case "elec_pump_kwh":
+          return { datasets: [{ label: "Strom Fernwärmeleitung (kWh)", data: dailyElecPump.map(v=>Number((+(v||0)).toFixed(2))) }] };
+        case "full_load_minutes":
+          return { datasets: [{ label: "Vollast (h)", data: dailyFullHours.map(v=>Number((+(v||0)).toFixed(2))) }] };
+        case "buffer_charges":
+          return { datasets: [{ label: "Pufferladungen", data: distributeDaily(readings, monthStr, "buffer_charges").map(v=>Number((+(v||0)).toFixed(0))) }] };
+        case "chips_kg":
+          return { datasets: [{ label: "Hackschnitzel (kg)", data: distributeDaily(readings, monthStr, "chips_kg").map(v=>Number((+(v||0)).toFixed(2))) }] };
+        default:
+          return { datasets: [{ label: metric, data: distributeDaily(readings, monthStr, metric).map(v=>Number((+(v||0)).toFixed(2))) }] };
+      }
     }
 
-    if(yearChart) yearChart.destroy();
-    yearChart = new Chart($("chartYear"), {
-      type:"bar",
-      data:{
-        labels:["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],
-        datasets:[{ label: `${metricLabel} – ${y}`, data: series.map(v=>Number((+v).toFixed(2))) }]
-      },
-      options:{
-        responsive:true,
-        plugins:{ legend:{ labels:{ color:"#e7eefc" } } },
-        scales:{
-          x:{ ticks:{ color:"#93a4c7" }, grid:{ color:"rgba(255,255,255,.06)" } },
-          y:{ ticks:{ color:"#93a4c7" }, grid:{ color:"rgba(255,255,255,.06)" } }
-        }
+    const {datasets} = seriesForMetric();
+
+    // Chart.js
+    const ctx = $("chartDaily");
+    if(!ctx){
+      $("statusMonth").textContent = "Chart-Canvas fehlt (chartDaily).";
+      return;
+    }
+    if(dailyChart){ try{ dailyChart.destroy(); }catch(_){} dailyChart=null; }
+
+    dailyChart = new Chart(ctx, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true } },
+        scales: { y: { beginAtZero: true } }
       }
     });
 
-    const rowsYear = await fetchDailyRange(toISODate(start), toISODate(end));
-    $("statusYear").innerHTML = statusSummary(rowsYear);
+    $("statusMonth").textContent = "";
   }
 
   // ---------- Comparison (metric selectable) ----------
@@ -808,7 +818,7 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
       const extra = document.createElement("div");
       extra.className = "muted";
       extra.style.marginTop = "4px";
-      extra.innerHTML = `Wärme ${escapeHtml(s.rosiName)}: ${heatRosi} · Strom Heizung: ${elecHeat} · Hacks: ${chips}`;
+      extra.innerHTML = `Wärme ${escapeHtml(s.rosiName)}: ${heatRosi} · Strom Heizung: ${elecHeat} · Hackschnitzel: ${chips} kg`;
       left.appendChild(extra);
 
       const right = document.createElement("div");

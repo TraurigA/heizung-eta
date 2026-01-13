@@ -113,7 +113,23 @@
   border-radius:12px;
   padding:10px;
 }
-</style>
+
+    /* Section cards (Heute / Übersicht) */
+    .section-grid{display:grid; gap:12px;}
+    @media(min-width:900px){ .section-grid.two{grid-template-columns:1fr 1fr;} }
+    .section-card{padding:12px;}
+    .section-head{display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px;}
+    .section-head h3{margin:0; font-size:14px; letter-spacing:.2px;}
+    .section-head .hint{color:var(--muted); font-size:12px;}
+    .kpi-row{display:grid; gap:10px;}
+    @media(min-width:900px){ .kpi-row.two{grid-template-columns:1fr 1fr;} }
+    .actions-bar{display:grid; gap:10px; grid-template-columns:1fr;}
+    @media(min-width:900px){ .actions-bar{grid-template-columns:1fr 1fr 1fr;} }
+    .actions-sub{display:grid; gap:10px; grid-template-columns:1fr;}
+    @media(min-width:900px){ .actions-sub{grid-template-columns:1fr 1fr;} }
+    .small-note{color:var(--muted); font-size:12px; margin-top:8px;}
+
+  </style>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -161,7 +177,7 @@
   </section>
 
   <!-- HEUTE -->
-  <section class="tab card hidden" data-tab="heute">
+    <section class="tab card hidden" data-tab="heute">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Heute – Schnelleingabe</h2>
 
     <div class="row">
@@ -176,81 +192,118 @@
     </div>
 
     <div class="hr"></div>
-    <div class="grid two">
-      <div>
-        <label id="lblHeatTotal">Wärme gesamt (kWh, Zähler)</label>
-        <input id="heat_total_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 186361.5" />
-      </div>
-      <div>
-        <label id="lblHeatRosi">Wärme Gebäude 2 (kWh, Zähler)</label>
-        <input id="heat_rosi_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 57804.0" />
-      </div>
-      <div>
-        <label id="lblHeatHouse">Wärme Wohnhaus (kWh, berechnet)</label>
-        <input id="heat_house_calc" type="text" disabled placeholder="wird automatisch berechnet" />
-      </div>
-      <div>
-        <div class="hr"></div>
-    <h3 style="margin:0 0 8px 0; font-size:14px;">Strom</h3>
 
-        <label>Strom Heizung gesamt (kWh, Zähler)</label>
-        <input id="elec_heating_kwh" type="number" step="0.01" inputmode="decimal" placeholder="z.B. 12345.67" />
+    <div class="section-grid two">
+      <div class="card section-card">
+        <div class="section-head">
+          <h3>Wärme</h3>
+          <div class="hint">Zählerstände</div>
+        </div>
+        <div class="kpi-row two">
+          <div>
+            <label>Wärme gesamt (kWh, Zähler)</label>
+            <input id="heat_total_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 186361.5" />
+          </div>
+          <div>
+            <label id="lblHeatRosi">Wärme Gebäude 2 (kWh, Zähler)</label>
+            <input id="heat_rosi_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 57804.0" />
+          </div>
+          <div style="grid-column:1/-1;">
+            <label id="lblHeatHouse">Wärme Wohnhaus (kWh, berechnet)</label>
+            <input id="heat_house_calc" type="text" disabled placeholder="wird automatisch berechnet" />
+          </div>
+        </div>
       </div>
-      <div>
-        <label>Strom Fernwärmeleitung (kWh, Zähler) – optional</label>
-        <input id="elec_pump_kwh" type="number" step="0.01" inputmode="decimal" placeholder="z.B. 234.12" />
-      </div>
-      <div>
-        <div class="hr"></div>
-    <h3 style="margin:0 0 8px 0; font-size:14px;">Betrieb</h3>
 
-        <label>Vollaststunden (h)</label>
-        <input id="full_h" type="number" step="1" inputmode="numeric" placeholder="z.B. 2994" />
+      <div class="card section-card">
+        <div class="section-head">
+          <h3>Strom</h3>
+          <div class="hint">Fernwärmeleitung = Pumpe Gebäude 2 (Info)</div>
+        </div>
+        <div class="kpi-row two">
+          <div>
+            <label>Strom Heizung gesamt (kWh, Zähler)</label>
+            <input id="elec_heating_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 12345.67" />
+          </div>
+          <div>
+            <label>Strom Fernwärmeleitung (kWh, Zähler) – optional</label>
+            <input id="elec_remote_kwh" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 234.12" />
+          </div>
+        </div>
       </div>
-      <div>
-        <label>Vollaststunden (min)</label>
-        <input id="full_m" type="number" step="1" inputmode="numeric" placeholder="z.B. 0" />
-      </div>
-      <div>
-        <label>Pufferladungen (Zähler)</label>
-        <input id="buffer_charges" type="number" step="1" inputmode="numeric" placeholder="z.B. 1038" />
-      </div>
-      <div>
-        <label>Hackschnitzel seit Asche (kg, Zähler)</label>
-        <input id="chips_kg_since_ash" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 343.0" />
-      </div>
-      <div>
-        <label>Temperatur ~18:00 (°C)</label>
-        <input id="temp_c" type="number" step="0.1" inputmode="decimal" placeholder="z.B. -4.8" />
-      </div>
-      <div>
-        <div class="hr"></div>
-    <h3 style="margin:0 0 8px 0; font-size:14px;">Notiz</h3>
 
-        <label>Notiz (optional)</label>
-        <input id="note" placeholder="z.B. Asche geleert, Abwesenheit, etc." />
+      <div class="card section-card">
+        <div class="section-head">
+          <h3>Betrieb</h3>
+          <div class="hint">Vollast: h + min</div>
+        </div>
+        <div class="kpi-row two">
+          <div>
+            <label>Vollaststunden (h)</label>
+            <input id="full_load_h" type="number" step="1" inputmode="numeric" placeholder="z.B. 2894" />
+          </div>
+          <div>
+            <label>Vollaststunden (min)</label>
+            <input id="full_load_min" type="number" step="1" inputmode="numeric" placeholder="z.B. 0" />
+          </div>
+          <div>
+            <label>Pufferladungen (Zähler)</label>
+            <input id="buffer_count" type="number" step="1" inputmode="numeric" placeholder="z.B. 1038" />
+          </div>
+          <div>
+            <label>Temperatur ~ -18.00°C</label>
+            <input id="temp_minus18" type="number" step="0.1" inputmode="decimal" placeholder="z.B. -4.8" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card section-card">
+        <div class="section-head">
+          <h3>Hackschnitzel / Asche</h3>
+          <div class="hint">Reset bei Asche-Event</div>
+        </div>
+        <div class="kpi-row">
+          <div>
+            <label>Hackschnitzel seit letzter Asche-Entleerung (kg)</label>
+            <input id="chips_since_ash_kg" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 343.0" />
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="hr"></div>
-    <div class="checkboxes">
-      <label><input type="checkbox" id="hk_house" /> Heizkörper Haus an</label>
-      <label><input type="checkbox" id="hk_rosi" /> Heizkörper Gebäude 2 an</label>
-      <label><input type="checkbox" id="fbh_rosi" /> FBH Gebäude 2 an</label>
+    <div class="card section-card">
+      <div class="section-head">
+        <h3>Schaltzustände</h3>
+        <div class="hint">für Status-Analyse</div>
+      </div>
+      <div class="checkboxes">
+        <label><input type="checkbox" id="hk_house" /> Heizkörper Haus an</label>
+        <label><input type="checkbox" id="hk_rosi" /> Heizkörper Gebäude 2 an</label>
+        <label><input type="checkbox" id="fbh_rosi" /> FBH Gebäude 2 an</label>
+      </div>
     </div>
 
-    <div class="row" style="margin-top:12px;">
-      <button class="ok" id="btnSaveToday">Speichern</button>
+    <div class="card section-card">
+      <div class="section-head">
+        <h3>Notiz</h3>
+        <div class="hint">optional</div>
+      </div>
+      <label style="display:none;">Notiz</label>
+      <input id="note" placeholder="z.B. Asche geleert, Abwesenheit, etc." />
+    </div>
+
+    <div class="actions-bar">
+      <button id="btnSave">Speichern</button>
       <button class="secondary" id="btnLoadToday">Heute laden</button>
       <button class="danger" id="btnAsh">Asche entleert (Event)</button>
     </div>
 
-    <div class="row" style="margin-top:10px;">
+    <div class="actions-sub">
       <button class="danger" id="btnDeleteToday">Diesen Tag löschen</button>
       <button class="secondary" id="btnResetCache">Update/Cache reset</button>
     </div>
 
-    <div class="muted" id="todayMsg" style="margin-top:8px;"></div>
+    <div class="small-note" id="todayMsg" aria-live="polite"></div>
   </section>
 
   <!-- EINTRÄGE -->
@@ -551,6 +604,7 @@
   
     <div class="hr"></div>
     <h3 style="margin:0 0 8px 0; font-size:14px;">Wartung</h3>
+    <div class="small-note">Hinweis: Für Wartungen brauchst du eine Supabase-Tabelle <code>maintenance_events</code> (siehe README).</div>
     <div class="row">
       <div>
         <label>Wartungsdatum</label>
