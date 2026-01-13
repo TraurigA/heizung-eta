@@ -1,4 +1,4 @@
-Heizungs-Logbuch – Release v3.2.8 (stabil + UI-Blöcke)
+Heizungs-Logbuch – Release v3.3.0 (stabil + UI-Blöcke)
 Build-Date: 2026-01-13
 
 Dieses ZIP ist ein kompletter Stand (alle Dateien). Ziel von v3.2.8:

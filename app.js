@@ -6,30 +6,34 @@
   const APP_VERSION = (cfg && cfg.appVersion) ? String(cfg.appVersion) : "3.2.2";
   const BUILD_DATE = (cfg && cfg.buildDate) ? String(cfg.buildDate) : "2026-01-13";
   const CHANGELOG = [
-    {
-      "v": "3.2.2",
-      "date": "2026-01-13",
-      "items": [
-        "Monatsauswertung stabilisiert (kein 'y is not defined', leere Felder tolerant)",
-        "Tabs umbenannt: Monatsauswertung/Jahresauswertung, Tab bleibt nach Reload erhalten",
-        "Gesamtübersicht erweitert (Zähler korrekt, Strom ohne falsche Summe, Vollaststunden als h/min)",
-        "Einträge-Liste: Tageskarten (Datum als Titel) + Bearbeiten",
-        "Heute-Formular in Bereiche gegliedert",
-        "Schaltzeiträume (von–bis, Dauer) pro Heizkreis",
-        "Wartung (Event) + Heizjahr-Logik ab 04.09. (virtuell)"
-      ]
-    },
-    {
-      "v": "3.2.1",
-      "date": "2026-01-13",
-      "items": [
-        "Löschen-Button pro Tag",
-        "Update/Cache Reset (PWA)",
-        "App-Icon integriert",
-        "Gesamtübersicht (Basis)"
-      ]
-    }
-  ];
+  {
+    "v": "3.3.0",
+    "date": "2026-01-13",
+    "items": [
+      "Jahresauswertung repariert (analyzeYear) und stabilisiert",
+      "Diagrammtyp Balken/Linie für Monat/Jahr/Vergleich",
+      "Vergleich erweitert: Wärme Wohnhaus separat auswählbar (abgeleitet aus Gesamt–Rosi)",
+      "Einträge: nur Datum + Tags; Sortierung ältester oben",
+      "Namen aus Einstellungen überall übernommen (Gebäude 2 -> Rosi, Wohnhaus-Name)",
+      "Gesamtübersicht in Blöcke unterteilt (Wärme/Strom/Betrieb/Hackschnitzel)"
+    ]
+  },
+  {
+    "v": "3.2.8",
+    "date": "2026-01-13",
+    "items": [
+      "Stabile Startbasis; App crasht nicht still",
+      "Monatsauswertung robust; Cache Reset"
+    ]
+  },
+  {
+    "v": "3.2.2",
+    "date": "2026-01-13",
+    "items": [
+      "Gesamtübersicht erweitert; Schaltzeiträume; Heizjahr-Logik; Wartung (optional)"
+    ]
+  }
+];
   const supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
   let session = null;
@@ -114,7 +118,22 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
       cbLabels[1].lastChild.textContent = ` Heizkörper ${s.rosiName} an`;
       cbLabels[2].lastChild.textContent = ` FBH ${s.rosiName} an`;
     }
-  }
+  
+    // Update metric option labels to use configured names (z.B. Gebäude 2 -> Rosi)
+    const rosi = s.rosiName || "Gebäude 2";
+    const house = s.houseName || "Wohnhaus";
+    const selects = ["anMetric","yearMetric","cmpMetric"];
+    for(const sid of selects){
+      const sel = $(sid);
+      if(!sel) continue;
+      for(const opt of Array.from(sel.options)){
+        opt.text = opt.text
+          .replaceAll("Gebäude 2", rosi)
+          .replaceAll("Wohnhaus", house);
+      }
+    }
+
+}
 
   // live derived field (Wohnhaus Wärme Zähler)
   function updateDerivedHeat(){
@@ -188,6 +207,10 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
       buildTabs();
       showTab((()=>{try{return localStorage.getItem("heizlog_last_tab")||"heute"}catch(_){return "heute"}})());
       renderChangelog();
+    initChartTypeSelect("anChartType","chartType.month");
+    initChartTypeSelect("yearChartType","chartType.year");
+    initChartTypeSelect("cmpChartType","chartType.compare");
+
       // default maintenance date = today
       if($("maintDate")) $("maintDate").value = toISODate(new Date());
       // precompute total overview (fast enough for typical datasets)
@@ -539,8 +562,7 @@ async function fetchChippingRange(startISO, endISO){
 
     // render chart
     if(window.monthChart) window.monthChart.destroy();
-    window.monthChart = new Chart($("chartDaily"), {
-      type:"bar",
+    window.monthChart = new Chart($("chartDaily"), { type:getChartType("anChartType","chartType.month"),
       data:{ labels, datasets },
       options:{
         responsive:true,
@@ -560,7 +582,92 @@ async function fetchChippingRange(startISO, endISO){
   }
 
   // ---------- Comparison (metric selectable) ----------
-  async function compareYears(yearA, yearB){
+    async function analyzeYear(yearStr){
+    const y = Number(yearStr);
+    if(!y || isNaN(y)) throw new Error("Ungültiges Jahr");
+    const padStart = new Date(y,0,1-50);
+    const padEnd   = new Date(y,11,31+50);
+
+    const readings = await fetchDailyRange(toISODate(padStart), toISODate(padEnd));
+    const metric = $("yearMetric")?.value || "heat_breakdown";
+
+    const months = Array.from({length:12}, (_,i)=>`${y}-${pad2(i+1)}`);
+    const labels = ["Jan","Feb","Mrz","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+
+    const heatTotalM = months.map(ms => sum(distributeDaily(readings, ms, "heat_total_kwh")));
+    const heatRosiM  = months.map(ms => sum(distributeDaily(readings, ms, "heat_rosi_kwh")));
+    const s = loadSettings();
+    const heatHouseM = heatTotalM.map((v,i)=>Math.max(0,(v||0)-(heatRosiM[i]||0)));
+
+    const elecHeatM  = months.map(ms => sum(distributeDaily(readings, ms, "elec_heating_kwh")));
+    const elecPumpM  = months.map(ms => sum(distributeDaily(readings, ms, "elec_pump_kwh")));
+    const fullHoursM = months.map(ms => sum(distributeDaily(readings, ms, "full_load_minutes"))/60);
+    const bufferM    = months.map(ms => sum(distributeDaily(readings, ms, "buffer_charges")));
+    const chipsM     = months.map(ms => sum(distributeDaily(readings, ms, "chips_kg_since_ash")));
+
+    const kpis = [
+      {k:"Wärme gesamt (kWh)", v: fmt1(sum(heatTotalM))},
+      {k:`Wärme ${escapeHtml(s.houseName)} (kWh)`, v: fmt1(sum(heatHouseM))},
+      {k:`Wärme ${escapeHtml(s.rosiName)} (kWh)`, v: fmt1(sum(heatRosiM))},
+      {k:"Strom Heizung (kWh)", v: fmt1(sum(elecHeatM))},
+      {k:"Strom Fernwärmeleitung (kWh)", v: fmt1(sum(elecPumpM))},
+      {k:"Vollaststunden (h)", v: fmt1(sum(fullHoursM))},
+      {k:"Pufferladungen", v: fmt0(sum(bufferM))},
+      {k:"Hackschnitzel Verbrauch (kg)", v: fmt1(sum(chipsM))}
+    ];
+    $("yearKpis").innerHTML = kpis.map(x=>`<div class="kpi"><div class="k">${x.k}</div><div class="v">${x.v}</div></div>`).join("");
+
+    let datasets = [];
+    if(metric==="heat_breakdown"){
+      datasets = [
+        { label:`Wärme Gesamt (kWh) – ${y}`, data: heatTotalM.map(v=>Number((+v||0).toFixed(2))) },
+        { label:`Wärme ${escapeHtml(s.houseName)} (kWh) – ${y}`, data: heatHouseM.map(v=>Number((+v||0).toFixed(2))) },
+        { label:`Wärme ${escapeHtml(s.rosiName)} (kWh) – ${y}`, data: heatRosiM.map(v=>Number((+v||0).toFixed(2))) }
+      ];
+    }else{
+      const map = {
+        heat_total_kwh: heatTotalM,
+        heat_house_kwh: heatHouseM,
+        heat_rosi_kwh: heatRosiM,
+        elec_heating_kwh: elecHeatM,
+        elec_pump_kwh: elecPumpM,
+        full_load_minutes: fullHoursM,
+        buffer_charges: bufferM,
+        chips_kg_since_ash: chipsM
+      };
+      const series = map[metric] || heatTotalM;
+      const labelMap = {
+        heat_total_kwh:"Wärme gesamt (kWh)",
+        heat_house_kwh:`Wärme ${escapeHtml(s.houseName)} (kWh)`,
+        heat_rosi_kwh:`Wärme ${escapeHtml(s.rosiName)} (kWh)`,
+        elec_heating_kwh:"Strom Heizung (kWh)",
+        elec_pump_kwh:"Strom Fernwärmeleitung (kWh)",
+        full_load_minutes:"Vollaststunden (h)",
+        buffer_charges:"Pufferladungen",
+        chips_kg_since_ash:"Hackschnitzel Verbrauch (kg)"
+      };
+      datasets = [{ label:`${labelMap[metric]||"Kennzahl"} – ${y}`, data: series.map(v=>Number((+v||0).toFixed(2))) }];
+    }
+
+    if(window.yearChart) window.yearChart.destroy();
+    window.yearChart = new Chart($("chartYear"), {
+      type:getChartType("yearChartType","chartType.year"),
+      data:{ labels, datasets },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        plugins:{ legend:{ labels:{ color:"#e7eefc" } } },
+        scales:{
+          x:{ ticks:{ color:"#93a4c7" }, grid:{ color:"rgba(255,255,255,.06)" } },
+          y:{ ticks:{ color:"#93a4c7" }, grid:{ color:"rgba(255,255,255,.06)" } }
+        }
+      }
+    });
+
+    $("statusYear").innerHTML = statusSummary(readings);
+  }
+
+async function compareYears(yearA, yearB){
     const metric = $("cmpMetric")?.value || "heat_total_kwh";
     const years = [yearA, yearB].map(Number);
     const minY = Math.min(...years), maxY = Math.max(...years);
@@ -575,7 +682,14 @@ async function fetchChippingRange(startISO, endISO){
       const totals = [];
       for(let m=1; m<=12; m++){
         const monthStr = `${y}-${pad2(m)}`;
-        let daily = distributeDaily(readings, monthStr, metric);
+        let daily;
+        if(metric==="heat_house_kwh"){
+          const tot = distributeDaily(readings, monthStr, "heat_total_kwh");
+          const ro  = distributeDaily(readings, monthStr, "heat_rosi_kwh");
+          daily = tot.map((v,i)=>(v||0)-(ro[i]||0));
+        }else{
+          daily = distributeDaily(readings, monthStr, metric);
+        }
         if(metric === "full_load_minutes") daily = daily.map(v=>v/60);
         totals.push(sum(daily));
       }
@@ -771,24 +885,39 @@ async function fetchChippingRange(startISO, endISO){
     const list = $("entryList");
     list.innerHTML = "";
 
-    const sorted = rows.slice().sort((a,b)=>b.day.localeCompare(a.day));
+    const sorted = rows.slice().sort((a,b)=>a.day.localeCompare(b.day));
     for(const r of sorted){
       const it = document.createElement("div");
       it.className = "item";
 
       const left = document.createElement("div");
-      const t = r.time_hhmm ? ` · ${r.time_hhmm}` : "";
-      left.innerHTML = `<strong>${r.day}${t}</strong><small>${escapeHtml(r.note||"")}</small>`;
+      left.innerHTML = `<strong>${r.day}</strong>`;
 
-      // small summary line
-      const heatRosi = (r.heat_rosi_kwh==null) ? "—" : fmt1(r.heat_rosi_kwh);
-      const elecHeat = (r.elec_heating_kwh==null) ? "—" : fmt1(r.elec_heating_kwh);
-      const chips = (r.chips_kg_since_ash==null) ? "—" : fmt1(r.chips_kg_since_ash);
-      const extra = document.createElement("div");
-      extra.className = "muted";
-      extra.style.marginTop = "4px";
-      extra.innerHTML = `Wärme ${escapeHtml(s.rosiName)}: ${heatRosi} · Strom Heizung: ${elecHeat} · Hackschnitzel: ${chips}`;
-      left.appendChild(extra);
+      const badges = document.createElement("div");
+      badges.className = "badges";
+
+      const hasHeat = (r.heat_total_kwh!=null) || (r.heat_rosi_kwh!=null);
+      const hasElec = (r.elec_heating_kwh!=null) || (r.elec_pump_kwh!=null);
+      const hasOps  = (r.full_load_minutes!=null) || (r.buffer_charges!=null);
+      const hasChips= (r.chips_kg_since_ash!=null);
+      const hasSwitch = !!(r.hk_house || r.hk_rosi || r.fbh_rosi);
+      const hasNote = !!(r.note && String(r.note).trim());
+
+      function addBadge(txt){
+        const b = document.createElement("span");
+        b.className = "badge";
+        b.textContent = txt;
+        badges.appendChild(b);
+      }
+
+      if(hasHeat) addBadge("Wärme");
+      if(hasElec) addBadge("Strom");
+      if(hasOps) addBadge("Betrieb");
+      if(hasChips) addBadge("Hackschnitzel");
+      if(hasSwitch) addBadge("Schalter");
+      if(hasNote) addBadge("Notiz");
+
+      left.appendChild(badges);
 
       const right = document.createElement("div");
       right.style.display="flex";
@@ -895,6 +1024,21 @@ async function fetchChippingRange(startISO, endISO){
     }).join("");
     box.innerHTML = lines || "<span class=\"muted\">Noch keine Einträge.</span>";
   }
+
+  // ---------- Chart type (Balken/Linie) ----------
+  function initChartTypeSelect(selectId, storageKey){
+    const el = $(selectId);
+    if(!el) return;
+    const saved = localStorage.getItem(storageKey);
+    if(saved && (saved==="bar" || saved==="line")) el.value = saved;
+    el.addEventListener("change", () => localStorage.setItem(storageKey, el.value));
+  }
+  function getChartType(selectId, storageKey){
+    const el = $(selectId);
+    const v = el ? el.value : (localStorage.getItem(storageKey) || "bar");
+    return (v==="line") ? "line" : "bar";
+  }
+
 
   // ---------- Service Worker hard reload ----------
   async function hardReload(){
@@ -1059,9 +1203,50 @@ async function fetchChippingRange(startISO, endISO){
       {k:"Pufferladungen (Zählerstand)", v: (bufferZ==null ? "—" : fmt0(bufferZ))},
       {k:"Tage mit Eintrag", v: String(daysWithEntry)},
     ];
-    $("gesamtKpis").innerHTML = kpis.map(x => `<div class="kpiBox"><div class="muted">${escapeHtml(x.k)}</div><div style="font-size:18px; font-weight:700;">${escapeHtml(x.v)}</div></div>`).join("");
+        function kpiBoxes(items){
+      return items.map(x=>`<div class="kpiBox"><div class="k">${x.k}</div><div class="v">${x.v}</div></div>`).join("");
+    }
 
-    // Heizjahr (fix ab 04.09.)
+    const heatItems = [
+      {k:"Wärme gesamt (kWh)", v: heatTotal ? fmt1(heatTotal) : "—"},
+      {k:`Wärme ${s.houseName} (kWh)`, v: heatHouse ? fmt1(heatHouse) : "—"},
+      {k:`Wärme ${s.rosiName} (kWh)`, v: heatRosi ? fmt1(heatRosi) : "—"},
+    ];
+    const elecItems = [
+      {k:"Strom Heizung (kWh)", v: elecHeat ? fmt1(elecHeat) : "—"},
+      {k:"Strom Fernwärmeleitung (kWh)", v: elecPump ? fmt1(elecPump) : "—"},
+    ];
+    const opsItems = [
+      {k:"Vollaststunden (Zählerstand)", v: fmtHM(fullMin)},
+      {k:"Pufferladungen (Zählerstand)", v: (bufferZ==null ? "—" : fmt0(bufferZ))},
+      {k:"Tage mit Eintrag", v: String(daysWithEntry)},
+    ];
+    const chipsItems = [
+      {k:"Hackschnitzel gesamt (kg)", v: chipsTot ? fmt1(chipsTot) : "—"},
+    ];
+
+    $("gesamtKpis").innerHTML = `
+      <div class="card section-card" style="margin:0 0 10px 0;">
+        <div class="section-head"><h3>Wärme</h3><div class="hint">Verbrauch (Deltas)</div></div>
+        <div class="kpi">${kpiBoxes(heatItems)}</div>
+      </div>
+
+      <div class="card section-card" style="margin:0 0 10px 0;">
+        <div class="section-head"><h3>Strom</h3><div class="hint">Heizung + Fernwärmeleitung (Info)</div></div>
+        <div class="kpi">${kpiBoxes(elecItems)}</div>
+      </div>
+
+      <div class="card section-card" style="margin:0 0 10px 0;">
+        <div class="section-head"><h3>Betrieb</h3><div class="hint">Zählerstände</div></div>
+        <div class="kpi">${kpiBoxes(opsItems)}</div>
+      </div>
+
+      <div class="card section-card" style="margin:0;">
+        <div class="section-head"><h3>Hackschnitzel</h3><div class="hint">Verbrauch gesamt</div></div>
+        <div class="kpi">${kpiBoxes(chipsItems)}</div>
+      </div>
+    `;
+// Heizjahr (fix ab 04.09.)
     const now = new Date();
     const hyStart = heatingYearStartFor(now);
     const hyLabel = `${hyStart.getFullYear()}/${String(hyStart.getFullYear()+1).slice(-2)}`;
