@@ -8,6 +8,6 @@ window.HEIZLOG_CONFIG = {
 
 // App version (for UI + cache busting)
 window.HEIZLOG_VERSION = {
-  version: "3.2.0",
+  version: "3.2.1",
   buildDate: "2026-01-13",
 };

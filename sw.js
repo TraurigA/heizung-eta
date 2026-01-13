@@ -1,10 +1,10 @@
-// sw.js – Heizungs-Logbuch (v3.2.0)
+// sw.js – Heizungs-Logbuch (v3.2.1)
 // Strategy:
 // - HTML/JS/JSON: network-first (updates arrive quickly)
 // - Images/icons: cache-first
 // Plus: skipWaiting + clientsClaim + cache cleanup
 
-const CACHE = "heizlog-cache-v3.2.0";
+const CACHE = "heizlog-cache-v3.2.1";
 const ASSETS = [
   "./",
   "./index.html",

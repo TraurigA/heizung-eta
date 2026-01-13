@@ -202,7 +202,7 @@
         <input id="buffer_charges" type="number" step="1" inputmode="numeric" placeholder="z.B. 1038" />
       </div>
       <div>
-        <label>Hackschnitzel seit Asche (kg, Zähler)</label>
+        <label>Hackschnitzel seit letzter Asche-Entleerung (kg)</label>
         <input id="chips_kg_since_ash" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 343.0" />
       </div>
       <div>
@@ -255,7 +255,7 @@
 
   <!-- AUSWERTUNG MONAT -->
   <section class="tab card hidden" data-tab="auswertung">
-    <h2 style="margin:0 0 8px 0; font-size:16px;">Auswertung (Monat)</h2>
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Monatsauswertung</h2>
     <div class="row">
       <div>
         <label>Monat</label>
@@ -349,6 +349,27 @@
       <div id="statusYear" class="muted" style="margin-top:8px;"></div>
     </div>
   </section>
+  <!-- GESAMTÜBERSICHT -->
+  <section class="tab card hidden" data-tab="gesamt">
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Gesamtübersicht</h2>
+    <div class="muted" style="margin-bottom:10px;">
+      Summen über alle gespeicherten Tage (unabhängig von Monat/Jahr und unabhängig von Asche-Reset).
+    </div>
+
+    <div class="row" style="align-items:flex-end;">
+      <div style="flex:1;">
+        <label>Stand</label>
+        <input id="totalsAsOf" type="text" readonly value="–" />
+      </div>
+      <div style="width:220px;">
+        <button class="secondary" id="btnTotalsRefresh">Neu berechnen</button>
+      </div>
+    </div>
+
+    <div class="kpi" id="totalsKpis"></div>
+    <div class="muted" id="totalsMsg" style="margin-top:10px;"></div>
+  </section>
+
 
   <!-- VERGLEICH -->
   <section class="tab card hidden" data-tab="vergleich">

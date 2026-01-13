@@ -105,8 +105,9 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
   const tabDefs = [
     {id:"heute", label:"Heute"},
     {id:"eintraege", label:"Einträge"},
-    {id:"auswertung", label:"Auswertung"},
-    {id:"jahr", label:"Jahr"},
+    {id:"auswertung", label:"Monatsauswertung"},
+    {id:"jahr", label:"Jahresauswertung"},
+    {id:"gesamt", label:"Gesamt"},
     {id:"vergleich", label:"Vergleich"},
     {id:"kosten", label:"Kosten"},
     {id:"hacks", label:"Hackschnitzel"},
@@ -118,6 +119,19 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
       el.classList.toggle("hidden", !ok);
     });
     document.querySelectorAll(".tabbtn").forEach(b => b.classList.toggle("active", b.dataset.tab===id));
+
+    // Lazy-load tab content that should refresh on open
+    if(id==="eintraege"){ 
+      const ms = $("monthPick")?.value || isoMonth(new Date());
+      loadMonthList(ms).catch(()=>{});
+    }
+    if(id==="hacks"){ 
+      const ms = $("chipMonth")?.value || isoMonth(new Date());
+      loadChippingList(ms).catch(()=>{});
+    }
+    if(id==="gesamt"){
+      loadTotalsAll().catch(()=>{});
+    }
   }
   function buildTabs(){
     const tabs = $("tabs");
@@ -201,6 +215,103 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
       .order("day", { ascending: true });
     if(error) throw error;
     return data || [];
+  }
+
+
+  async function fetchAllDaily(){
+    // Paged fetch (Supabase/PostgREST can page results). We fetch in chunks to be safe.
+    const out = [];
+    const pageSize = 1000;
+    let from = 0;
+    while(true){
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase
+        .from("daily_readings")
+        .select("*")
+        .eq("user_id", userId())
+        .order("day", { ascending: true })
+        .range(from, to);
+      if(error) throw error;
+      const rows = data || [];
+      out.push(...rows);
+      if(rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return out;
+  }
+
+  function sumDeltasAll(readings, field){
+    if(!readings || readings.length < 2) return 0;
+    let sum = 0;
+    for(let i=1; i<readings.length; i++){
+      const a = readings[i-1], b = readings[i];
+      const da = parseISODate(a.day), db = parseISODate(b.day);
+      const gap = dayDiff(da, db);
+      if(gap <= 0) continue;
+
+      const av = Number(a[field]);
+      const bv = Number(b[field]);
+      if(!Number.isFinite(av) || !Number.isFinite(bv)) continue;
+
+      let delta = bv - av;
+
+      // chips_kg_since_ash can reset to 0 after ash empty -> treat reset as "bv since reset"
+      if(field === "chips_kg_since_ash" && delta < 0){
+        delta = bv;
+      }
+
+      // For meter-like counters, negative deltas are usually corrections/resets -> ignore
+      if(delta < 0) continue;
+
+      sum += delta;
+    }
+    return sum;
+  }
+
+  let _totalsCacheKey = "";
+  async function loadTotalsAll(force=false){
+    if(!$("totalsKpis")) return;
+
+    $("totalsMsg").textContent = "Berechne…";
+    const rows = await fetchAllDaily();
+    if(rows.length === 0){
+      $("totalsAsOf").value = "Keine Daten";
+      $("totalsKpis").innerHTML = "";
+      $("totalsMsg").textContent = "";
+      return;
+    }
+
+    const first = rows[0].day;
+    const last = rows[rows.length-1].day;
+    const cacheKey = `${first}|${last}|${rows.length}`;
+    if(!force && cacheKey === _totalsCacheKey){
+      $("totalsMsg").textContent = "Aktuell (keine Änderung seit letzter Berechnung).";
+      return;
+    }
+    _totalsCacheKey = cacheKey;
+
+    const heatTotal = sumDeltasAll(rows, "heat_total_kwh");
+    const heatRosi = sumDeltasAll(rows, "heat_rosi_kwh");
+    const heatHouse = heatTotal - heatRosi;
+
+    const elecHeat = sumDeltasAll(rows, "elec_heating_kwh");
+    const chipsKg = sumDeltasAll(rows, "chips_kg_since_ash");
+
+    $("totalsAsOf").value = `${first} → ${last}  (${rows.length} Tage)`;
+
+    const kpis = [
+      {k:"Wärme Gesamt (kWh)", v: fmt1(heatTotal)},
+      {k:`Wärme ${settings().rosiName} (kWh)`, v: fmt1(heatRosi)},
+      {k:`Wärme ${settings().houseName} (kWh)`, v: fmt1(heatHouse)},
+      {k:"Strom Heizung gesamt (kWh)", v: fmt1(elecHeat)},
+      {k:"Hackschnitzel Gesamt (kg)", v: fmt1(chipsKg)},
+    ];
+
+    $("totalsKpis").innerHTML = kpis.map(x => `
+      <div class="box"><div class="v">${x.v}</div><div class="k">${x.k}</div></div>
+    `).join("");
+
+    $("totalsMsg").textContent = "Fertig ✅";
   }
 
   async function deleteDaily(dayISO){
@@ -933,6 +1044,12 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
       try{ await compareYears($("yearA").value, $("yearB").value); }
       catch(e){ alert(e.message || e); }
     });
+
+    $("btnTotalsRefresh")?.addEventListener("click", async () => {
+      try{ await loadTotalsAll(true); }
+      catch(e){ $("totalsMsg").textContent = e.message || String(e); }
+    });
+
 
     $("btnSavePrice").addEventListener("click", async () => {
       $("costMsg").textContent = "";

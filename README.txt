@@ -3,7 +3,7 @@ Heizungs-Logbuch – Komplett-Update (v3.2)
 Dieses ZIP enthält ALLE Dateien (index.html, app.js, config.js, manifest.json, sw.js, Icons).
 
 Neu in v3.2:
-- Versionsanzeige oben (v3.2.0) + Build-Datum
+- Versionsanzeige oben (v3.2.1) + Build-Datum
 - Service Worker professionell (network-first für HTML/JS/JSON, auto-reload bei Update)
 - Button: "Update/Cache reset" (unregister SW + Cache löschen)
 - Löschen: "Diesen Tag löschen" + 🗑 in Monatsliste
