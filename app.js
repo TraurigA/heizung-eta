@@ -1331,5 +1331,28 @@ async function init(){
     $("heat_total_kwh")?.addEventListener("input", updateDerivedHeat);
     $("heat_rosi_kwh")?.addEventListener("input", updateDerivedHeat);
 
-document.addEventListener("DOMContentLoaded", init);
+function fatalError(err){
+  try{ console.error(err); }catch(_){ }
+  try{
+    const sb = document.getElementById("syncBadge");
+    if(sb){ sb.textContent = "error"; sb.title = String(err && err.message ? err.message : err); }
+    const vb = document.getElementById("verBadge");
+    if(vb && vb.textContent === "v?"){ vb.textContent = "v3.2.7"; }
+  }catch(_){ }
+  try{
+    // show a small, non-blocking hint on the login tab
+    const login = document.querySelector('section[data-tab="login"]');
+    if(login && !login.querySelector(".fatal-hint")){
+      const d=document.createElement("div");
+      d.className="fatal-hint";
+      d.style.cssText="margin-top:10px;color:#ffb4b4;font-size:12px;";
+      d.textContent="Fehler beim Laden der App. Bitte Seite neu laden oder Update/Cache reset verwenden. (Details in der Browser-Konsole)";
+      login.appendChild(d);
+    }
+  }catch(_){ }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  Promise.resolve(init()).catch(fatalError);
+});
 })();
