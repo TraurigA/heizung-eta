@@ -1,69 +1,82 @@
-Heizungs-Logbuch – Komplett-Update (v3.2.3)
+Heizungs-Logbuch – Release v3.2.8 (stabil + UI-Blöcke)
+Build-Date: 2026-01-13
 
-Dieses ZIP enthält ALLE Dateien (index.html, app.js, config.js, manifest.json, sw.js, Icons).
+Dieses ZIP ist ein kompletter Stand (alle Dateien). Ziel von v3.2.8:
+- Stabiler Start (Login reagiert wieder zuverlässig)
+- Monatsauswertung repariert und robust (keine "is not defined" / kein Crash bei leeren Feldern)
+- "Heute" übersichtlich in Blöcken (wie Gesamtübersicht)
+- Einträge: "Hacks." heißt jetzt "Hackschnitzel"
+- Hinweis zur Wartungstabelle wird in der App angezeigt
 
-Neu in v3:
-- Heute: Feld "Wärme Wohnhaus (kWh, berechnet)" = Gesamt − Gebäude 2
-- Einträge-Liste: zeigt Wärme-Zählerstände inkl. Wohnhaus (berechnet)
-- Auswertung Monat/Jahr: Diagramm-Option "Wärme: Gesamt + Wohnhaus + Gebäude 2" (3 Kurven / 3 Balken)
-- Auswertungen bleiben vollständig: Wärme, Strom, Vollaststunden, Pufferladungen, Hackschnitzel, etc. – pro Monat & pro Jahr
+---
 
-Update im GitHub Repo (ohne Zeilensuche):
-- Öffne jede Datei (index.html / app.js / config.js / manifest.json / sw.js)
-- ✏️ Edit -> STRG+A -> STRG+V -> Inhalt aus ZIP einfügen -> Commit changes
+1) Deployment (GitHub Pages)
+1. ZIP entpacken
+2. Im GitHub-Repo alle Dateien ersetzen/überschreiben
+3. Commit/Push (GitHub Pages deployed automatisch)
 
-Wenn am iPhone noch alte Version angezeigt wird:
-- App schließen & neu öffnen, oder Safari-Seite neu laden
-- notfalls Website-Daten löschen / App neu hinzufügen (Service Worker Cache)
+Danach im Browser:
+- Falls du noch eine alte Version siehst: in der App "Update/Cache reset" drücken.
+- Am PC (Chrome): DevTools → Application → Service Workers → Unregister → Reload (Strg+Shift+R).
 
+---
 
-Neu in v3.2.3:
-- Monatsauswertung stabilisiert (kein 'y is not defined')
-- Tabs: Monatsauswertung/Jahresauswertung + Tab bleibt erhalten
-- Gesamtübersicht (Zähler korrekt, Strom ohne falsche Summe, Vollaststunden als h/min)
-- Einträge: Datum als Titel + Bearbeiten/Löschen
-- Heute: Bereiche (Wärme/Strom/Betrieb/Hacks/Schaltzustände/Notiz)
-- Changelog im Reiter Einstellungen
-- Wartung (optional): benötigt Supabase-Tabelle 'maintenance_events'
+2) Version prüfen
+Oben rechts in der App steht die Version. Für diesen Stand muss dort "v3.2.8" stehen.
 
-Supabase SQL für Wartung (optional):
-CREATE TABLE IF NOT EXISTS public.maintenance_events (
-  id bigserial PRIMARY KEY,
-  user_id uuid NOT NULL,
-  day date NOT NULL,
-  ts timestamptz NOT NULL DEFAULT now(),
-  note text,
-  snapshot jsonb
-);
-ALTER TABLE public.maintenance_events ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "maintenance_select_own" ON public.maintenance_events FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "maintenance_insert_own" ON public.maintenance_events FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "maintenance_delete_own" ON public.maintenance_events FOR DELETE USING (auth.uid() = user_id);
+---
 
-Hinweis: Wenn du keine Wartungen nutzt, kannst du die Tabelle weglassen – die App zeigt dann einen Hinweis.
+3) Wartung (optional)
+Für Wartungen nutzt die App eine zusätzliche Supabase-Tabelle: maintenance_events.
+Wenn du Wartung verwenden willst, lege die Tabelle einmalig in Supabase an:
 
-```sql
--- Optional: Wartungen speichern
+-- Tabelle
 create table if not exists public.maintenance_events (
   id bigserial primary key,
   user_id uuid not null,
-  day date not null,
-  ts timestamptz not null default now(),
+  date date not null,
   note text,
-  snapshot jsonb
+  heat_total_kwh numeric,
+  full_load_minutes integer,
+  created_at timestamptz not null default now()
 );
 
+-- RLS aktivieren
 alter table public.maintenance_events enable row level security;
 
-create policy "maintenance_events_select_own"
-on public.maintenance_events for select
-using (auth.uid() = user_id);
+-- Policy: Benutzer darf eigene Events lesen/schreiben
+create policy "maintenance_select_own" on public.maintenance_events
+  for select using (auth.uid() = user_id);
 
-create policy "maintenance_events_insert_own"
-on public.maintenance_events for insert
-with check (auth.uid() = user_id);
+create policy "maintenance_insert_own" on public.maintenance_events
+  for insert with check (auth.uid() = user_id);
 
-create policy "maintenance_events_delete_own"
-on public.maintenance_events for delete
-using (auth.uid() = user_id);
-```
+create policy "maintenance_update_own" on public.maintenance_events
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "maintenance_delete_own" on public.maintenance_events
+  for delete using (auth.uid() = user_id);
+
+Hinweis: Wenn du die Tabelle nicht anlegst, funktioniert der Rest der App weiterhin – Wartungsfunktionen zeigen dann nur den Hinweis.
+
+---
+
+4) Was ist drin (Kurzliste der wichtigen Funktionen)
+- Wärme: Gesamt, Wohnhaus (berechnet), Gebäude 2 / Rosi getrennt
+- Strom: Heizung gesamt + Fernwärmeleitung/Pumpe (separat, ohne falsche Summen)
+- Betrieb: Vollaststunden (h+min), Pufferladungen
+- Hackschnitzel: Gesamt / seit Asche-Entleerung + Asche-Event
+- Schaltzustände: HK Haus / HK Rosi / FBH Rosi + Status-Analyse
+- Einträge: Liste + Löschen + Bearbeiten (Tagesdatensatz laden, korrigieren, speichern)
+- Gesamtübersicht: Summen/letzte Zählerstände korrekt (keine falschen Additionen)
+- Monatsauswertung & Jahresauswertung: robust gegen fehlende Werte
+- Heizjahr-Logik (Start 04.09.) + Wartung als Event (separat vom Heizjahr)
+- Changelog-Bereich (Einstellungen)
+
+---
+
+5) Troubleshooting (wenn die App „alt“ wirkt)
+- In der App: "Update/Cache reset"
+- PC: DevTools → Application → Service Workers → Unregister → Reload
+- iPhone/PWA: ggf. App vom Homescreen entfernen und neu hinzufügen (nur wenn hartnäckig)
+
