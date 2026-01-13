@@ -4,7 +4,7 @@
 // - Images/icons: cache-first
 // Plus: skipWaiting + clientsClaim + cache cleanup
 
-const CACHE = "heizlog-cache-v3.2.1";
+const CACHE = "heizlog-cache-v3.2.0";
 const ASSETS = [
   "./",
   "./index.html",

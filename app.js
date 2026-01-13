@@ -119,19 +119,7 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
       el.classList.toggle("hidden", !ok);
     });
     document.querySelectorAll(".tabbtn").forEach(b => b.classList.toggle("active", b.dataset.tab===id));
-
-    // Lazy-load tab content that should refresh on open
-    if(id==="eintraege"){ 
-      const ms = $("monthPick")?.value || isoMonth(new Date());
-      loadMonthList(ms).catch(()=>{});
-    }
-    if(id==="hacks"){ 
-      const ms = $("chipMonth")?.value || isoMonth(new Date());
-      loadChippingList(ms).catch(()=>{});
-    }
-    if(id==="gesamt"){
-      loadTotalsAll().catch(()=>{});
-    }
+    if(id==="gesamt") loadTotals();
   }
   function buildTabs(){
     const tabs = $("tabs");
@@ -219,100 +207,107 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
 
 
   async function fetchAllDaily(){
-    // Paged fetch (Supabase/PostgREST can page results). We fetch in chunks to be safe.
-    const out = [];
+    // Paged fetch to avoid limits on larger histories
     const pageSize = 1000;
     let from = 0;
+    let out = [];
     while(true){
-      const to = from + pageSize - 1;
       const { data, error } = await supabase
         .from("daily_readings")
         .select("*")
         .eq("user_id", userId())
         .order("day", { ascending: true })
-        .range(from, to);
+        .range(from, from + pageSize - 1);
       if(error) throw error;
       const rows = data || [];
-      out.push(...rows);
+      out = out.concat(rows);
       if(rows.length < pageSize) break;
       from += pageSize;
     }
     return out;
   }
 
-  function sumDeltasAll(readings, field){
-    if(!readings || readings.length < 2) return 0;
-    let sum = 0;
-    for(let i=1; i<readings.length; i++){
-      const a = readings[i-1], b = readings[i];
-      const da = parseISODate(a.day), db = parseISODate(b.day);
-      const gap = dayDiff(da, db);
-      if(gap <= 0) continue;
+  function computeChipsTotalKg(rows){
+    // chips_kg_since_ash is a counter that resets after an ash-empty event.
+    // Reconstruct total consumption by summing positive deltas, treating decreases as reset.
+    let total = 0;
+    let prev = null;
+    for(const r of rows){
+      const v = (r.chips_kg_since_ash==null) ? null : Number(r.chips_kg_since_ash);
+      if(v==null || Number.isNaN(v)) continue;
+      if(prev==null){
+        total += Math.max(0, v);
+      }else if(v >= prev){
+        total += (v - prev);
+      }else{
+        // reset happened -> add current counter
+        total += Math.max(0, v);
+      }
+      prev = v;
+    }
+    return total;
+  }
 
-      const av = Number(a[field]);
-      const bv = Number(b[field]);
-      if(!Number.isFinite(av) || !Number.isFinite(bv)) continue;
+  async function loadTotals(){
+    if(!session) return;
+    try{
+      if($("totalsInfo")) $("totalsInfo").textContent = "lädt...";
+      const rows = await fetchAllDaily();
 
-      let delta = bv - av;
+      let heatTotal = 0, heatRosi = 0, heatHouse = 0;
+      let elecHeat = 0, elecPump = 0;
+      let fullLoadMin = 0;
+      let bufferCharges = 0;
+      let days = 0;
 
-      // chips_kg_since_ash can reset to 0 after ash empty -> treat reset as "bv since reset"
-      if(field === "chips_kg_since_ash" && delta < 0){
-        delta = bv;
+      for(const r of rows){
+        days += 1;
+
+        if(r.heat_total_kwh!=null) heatTotal += Number(r.heat_total_kwh) || 0;
+        if(r.heat_rosi_kwh!=null) heatRosi += Number(r.heat_rosi_kwh) || 0;
+        if(r.heat_total_kwh!=null && r.heat_rosi_kwh!=null){
+          heatHouse += (Number(r.heat_total_kwh)||0) - (Number(r.heat_rosi_kwh)||0);
+        }
+
+        if(r.elec_heating_kwh!=null) elecHeat += Number(r.elec_heating_kwh) || 0;
+        if(r.elec_pump_kwh!=null) elecPump += Number(r.elec_pump_kwh) || 0;
+
+        if(r.full_load_minutes!=null) fullLoadMin += Number(r.full_load_minutes) || 0;
+        if(r.buffer_charges!=null) bufferCharges += Number(r.buffer_charges) || 0;
       }
 
-      // For meter-like counters, negative deltas are usually corrections/resets -> ignore
-      if(delta < 0) continue;
+      const chipsTotal = computeChipsTotalKg(rows);
+      // current counter since last ash = last non-null value
+      let chipsSinceAshNow = null;
+      for(let i=rows.length-1;i>=0;i--){
+        const v = rows[i].chips_kg_since_ash;
+        if(v!=null && v!==""){ chipsSinceAshNow = Number(v); break; }
+      }
 
-      sum += delta;
+      const fmt1 = (n) => (Math.round(n*10)/10).toLocaleString("de-DE", {minimumFractionDigits:1, maximumFractionDigits:1});
+      const fmt0 = (n) => (Math.round(n)).toLocaleString("de-DE");
+
+      $("totHeatTotal").textContent = fmt1(heatTotal);
+      $("totHeatRosi").textContent = fmt1(heatRosi);
+      $("totHeatHouse").textContent = fmt1(heatHouse);
+
+      $("totElecHeating").textContent = fmt1(elecHeat);
+      $("totElecPump").textContent = fmt1(elecPump);
+      $("totElecTotal").textContent = fmt1(elecHeat + elecPump);
+
+      $("totChipsTotal").textContent = fmt1(chipsTotal);
+      $("totChipsSinceAshNow").textContent = (chipsSinceAshNow==null || Number.isNaN(chipsSinceAshNow)) ? "–" : fmt1(chipsSinceAshNow);
+
+      $("totFullLoadH").textContent = fmt1(fullLoadMin/60);
+      $("totBufferCharges").textContent = fmt0(bufferCharges);
+      $("totDays").textContent = fmt0(days);
+
+      if($("totalsInfo")) $("totalsInfo").textContent = rows.length ? `Stand: ${rows[rows.length-1].day}` : "Keine Einträge";
+    }catch(e){
+      if($("totalsInfo")) $("totalsInfo").textContent = (e?.message || String(e));
     }
-    return sum;
   }
 
-  let _totalsCacheKey = "";
-  async function loadTotalsAll(force=false){
-    if(!$("totalsKpis")) return;
-
-    $("totalsMsg").textContent = "Berechne…";
-    const rows = await fetchAllDaily();
-    if(rows.length === 0){
-      $("totalsAsOf").value = "Keine Daten";
-      $("totalsKpis").innerHTML = "";
-      $("totalsMsg").textContent = "";
-      return;
-    }
-
-    const first = rows[0].day;
-    const last = rows[rows.length-1].day;
-    const cacheKey = `${first}|${last}|${rows.length}`;
-    if(!force && cacheKey === _totalsCacheKey){
-      $("totalsMsg").textContent = "Aktuell (keine Änderung seit letzter Berechnung).";
-      return;
-    }
-    _totalsCacheKey = cacheKey;
-
-    const heatTotal = sumDeltasAll(rows, "heat_total_kwh");
-    const heatRosi = sumDeltasAll(rows, "heat_rosi_kwh");
-    const heatHouse = heatTotal - heatRosi;
-
-    const elecHeat = sumDeltasAll(rows, "elec_heating_kwh");
-    const chipsKg = sumDeltasAll(rows, "chips_kg_since_ash");
-
-    $("totalsAsOf").value = `${first} → ${last}  (${rows.length} Tage)`;
-
-    const kpis = [
-      {k:"Wärme Gesamt (kWh)", v: fmt1(heatTotal)},
-      {k:`Wärme ${settings().rosiName} (kWh)`, v: fmt1(heatRosi)},
-      {k:`Wärme ${settings().houseName} (kWh)`, v: fmt1(heatHouse)},
-      {k:"Strom Heizung gesamt (kWh)", v: fmt1(elecHeat)},
-      {k:"Hackschnitzel Gesamt (kg)", v: fmt1(chipsKg)},
-    ];
-
-    $("totalsKpis").innerHTML = kpis.map(x => `
-      <div class="box"><div class="v">${x.v}</div><div class="k">${x.k}</div></div>
-    `).join("");
-
-    $("totalsMsg").textContent = "Fertig ✅";
-  }
 
   async function deleteDaily(dayISO){
     const { error } = await supabase
@@ -1045,12 +1040,6 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
       catch(e){ alert(e.message || e); }
     });
 
-    $("btnTotalsRefresh")?.addEventListener("click", async () => {
-      try{ await loadTotalsAll(true); }
-      catch(e){ $("totalsMsg").textContent = e.message || String(e); }
-    });
-
-
     $("btnSavePrice").addEventListener("click", async () => {
       $("costMsg").textContent = "";
       try{
@@ -1118,6 +1107,9 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
 }
 
     // derived calc listeners
+    // Gesamtübersicht
+    $("btnTotalsRefresh")?.addEventListener("click", loadTotals);
+
     $("heat_total_kwh")?.addEventListener("input", updateDerivedHeat);
     $("heat_rosi_kwh")?.addEventListener("input", updateDerivedHeat);
 
