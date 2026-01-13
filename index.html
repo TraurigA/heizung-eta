@@ -122,6 +122,7 @@
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
         <span class="badge" id="syncBadge">offline</span>
+        <span class="badge" id="verBadge" title="App-Version">v—</span>
         <button class="secondary" id="btnLogout" style="width:auto;">Logout</button>
       </div>
     </div>
@@ -226,6 +227,11 @@
       <button class="secondary" id="btnLoadToday">Heute laden</button>
       <button class="danger" id="btnAsh">Asche entleert (Event)</button>
     </div>
+    <div class="row" style="margin-top:8px;">
+      <button class="danger" id="btnDeleteDay">Diesen Tag löschen</button>
+      <button class="secondary" id="btnHardRefresh">Update/Cache reset</button>
+    </div>
+
 
     <div class="muted" id="todayMsg" style="margin-top:8px;"></div>
   </section>
@@ -496,7 +502,7 @@
 
 <script>
   if("serviceWorker" in navigator){
-    navigator.serviceWorker.register("sw.js").catch(()=>{});
+    navigator.serviceWorker.register("sw.js?v="+encodeURIComponent((window.HEIZLOG_VERSION&&window.HEIZLOG_VERSION.version)||"")).catch(()=>{});
   }
 </script>
 </body>

@@ -5,3 +5,9 @@ window.HEIZLOG_CONFIG = {
   heatingYearStart: "09-04", // MM-DD (04.09.)
   defaultTime: "18:00",
 };
+
+// App version (for UI + cache busting)
+window.HEIZLOG_VERSION = {
+  version: "3.2.0",
+  buildDate: "2026-01-13",
+};

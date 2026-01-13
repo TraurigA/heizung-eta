@@ -203,7 +203,38 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
     return data || [];
   }
 
-  async function fetchDailyMonth(monthStr){
+  async function deleteDaily(dayISO){
+    const { error } = await supabase
+      .from("daily_readings")
+      .delete()
+      .eq("user_id", userId())
+      .eq("day", dayISO);
+    if(error) throw error;
+  }
+
+
+  
+  async function hardRefresh(){
+    try{
+      // Unregister service workers (important for iOS PWA cache issues)
+      if("serviceWorker" in navigator){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      // Delete all caches
+      if("caches" in window){
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    }finally{
+      // Force a fresh navigation (adds a cache-busting query)
+      const u = new URL(location.href);
+      u.searchParams.set("v", String(Date.now()));
+      location.href = u.toString();
+    }
+  }
+
+async function fetchDailyMonth(monthStr){
     const {start, end} = monthStartEnd(monthStr);
     return await fetchDailyRange(toISODate(start), toISODate(end));
   }
@@ -714,6 +745,32 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
       it.className = "item";
       it.appendChild(left);
       it.appendChild(right);
+      // Delete button (stops click from opening the entry)
+      const del = document.createElement("button");
+      del.className = "danger";
+      del.textContent = "🗑";
+      del.title = "Eintrag löschen";
+      del.style.width = "auto";
+      del.style.padding = "6px 10px";
+      del.style.marginLeft = "8px";
+      del.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        if(!confirm(`Eintrag für ${r.day} wirklich löschen?`)) return;
+        try{
+          await deleteDaily(r.day);
+          $("monthInfo").textContent = "Gelöscht ✅";
+          await loadMonthList(monthStr);
+        }catch(e){
+          $("monthInfo").textContent = e.message || String(e);
+        }
+      });
+
+      // Put the delete button on the right side
+      right.style.display = "flex";
+      right.style.alignItems = "center";
+      right.style.justifyContent = "flex-end";
+      right.appendChild(del);
+
       it.addEventListener("click", async () => {
         $("day").value = r.day;
         await loadDayToForm(r.day);
@@ -773,6 +830,21 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
   async function init(){
     applySettings();
     setTodayDefaults();
+    // Version badge in UI
+    const ver = (window.HEIZLOG_VERSION && window.HEIZLOG_VERSION.version) ? window.HEIZLOG_VERSION.version : "dev";
+    const bdate = (window.HEIZLOG_VERSION && window.HEIZLOG_VERSION.buildDate) ? window.HEIZLOG_VERSION.buildDate : "";
+    if($("verBadge")){
+      $("verBadge").textContent = "v" + ver;
+      $("verBadge").title = bdate ? (`App-Version v${ver} (${bdate})`) : (`App-Version v${ver}`);
+    }
+
+    // Auto-reload when a new Service Worker takes control
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        window.location.reload();
+      });
+    }
+
 
     window.addEventListener("online", renderAuthState);
     window.addEventListener("offline", renderAuthState);
@@ -805,6 +877,28 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
     $("btnLoadToday").addEventListener("click", async () => {
       $("todayMsg").textContent = "";
       try{ await loadDayToForm($("day").value); }catch(e){ $("todayMsg").textContent = e.message || String(e); }
+    });
+
+    $("btnDeleteDay")?.addEventListener("click", async () => {
+      $("todayMsg").textContent = "";
+      try{
+        const d = $("day").value;
+        if(!d) throw new Error("Bitte Datum wählen.");
+        if(!confirm(`Eintrag für ${d} wirklich löschen?`)) return;
+        await deleteDaily(d);
+        $("todayMsg").textContent = "Gelöscht ✅";
+        await loadDayToForm(d); // reload -> shows empty state
+        // refresh month list if open
+        const m = $("month")?.value;
+        if(m) await loadMonthList(m);
+      }catch(e){
+        $("todayMsg").textContent = e.message || String(e);
+      }
+    });
+
+    $("btnHardRefresh")?.addEventListener("click", async () => {
+      if(!confirm("Update/Cache reset durchführen?\n\nDas lädt die App komplett neu und behebt oft iPhone/PWA-Cache-Probleme.")) return;
+      await hardRefresh();
     });
 
     $("btnAsh").addEventListener("click", async () => {
