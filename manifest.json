@@ -1,7 +1,7 @@
 {
   "name": "Heizungs-Logbuch",
   "short_name": "Heizlog",
-  "start_url": "./index.html?v=3.2.3",
+  "start_url": "./index.html?v=3.2.4",
   "display": "standalone",
   "background_color": "#0b1220",
   "theme_color": "#0b1220",

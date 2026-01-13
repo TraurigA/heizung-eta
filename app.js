@@ -906,7 +906,6 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
   }
 
   // ---------- Wiring ----------
-  async 
   // ---------- Changelog ----------
   function renderChangelog(){
     const box = $("changelogBox");
