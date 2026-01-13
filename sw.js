@@ -1,56 +1,62 @@
-// sw.js – Heizungs-Logbuch (v3.2.1)
-// Strategy:
-// - HTML/JS/JSON: network-first (updates arrive quickly)
-// - Images/icons: cache-first
-// Plus: skipWaiting + clientsClaim + cache cleanup
+// Heizungs-Logbuch Service Worker (v3.2.2)
+const VERSION = "3.2.2";
+const CACHE = `heizlog-cache-${VERSION}`;
 
-const CACHE = "heizlog-cache-v3.2.0";
+// Minimal app shell. We avoid over-caching API calls.
 const ASSETS = [
   "./",
   "./index.html",
-  "./manifest.json",
-  "./config.js",
   "./app.js",
+  "./config.js",
+  "./manifest.json",
   "./icon-192.png",
   "./icon-512.png"
 ];
 
-self.addEventListener("install", (e) => {
-  self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+self.addEventListener("install", (event) => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await cache.addAll(ASSETS);
+    await self.skipWaiting();
+  })());
 });
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil((async () => {
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : Promise.resolve())));
     await self.clients.claim();
   })());
 });
 
-self.addEventListener("fetch", (e) => {
-  const req = e.request;
+function isAppShell(req){
   const url = new URL(req.url);
+  if(url.origin !== self.location.origin) return false;
+  // treat navigation and core assets as app shell
+  if(req.mode === "navigate") return true;
+  return ASSETS.some(a => url.pathname.endsWith(a.replace("./","/")));
+}
 
-  if (url.origin !== location.origin) return;
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
 
-  const isDoc = req.mode === "navigate" || url.pathname.endsWith("/index.html") || url.pathname.endsWith(".html");
-  const isCode = url.pathname.endsWith(".js") || url.pathname.endsWith(".json");
-
-  if (isDoc || isCode) {
-    e.respondWith((async () => {
-      try {
-        const fresh = await fetch(req, { cache: "no-store" });
-        const cache = await caches.open(CACHE);
-        cache.put(req, fresh.clone());
+  // App shell: network-first (so updates show quickly), fallback to cache.
+  if(isAppShell(req)){
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try{
+        const fresh = await fetch(req);
+        if(fresh && fresh.ok){
+          cache.put(req, fresh.clone());
+        }
         return fresh;
-      } catch {
-        const hit = await caches.match(req);
+      }catch(_){
+        const hit = await cache.match(req);
         return hit || caches.match("./index.html");
       }
     })());
     return;
   }
 
-  e.respondWith(caches.match(req).then(hit => hit || fetch(req)));
+  // Everything else: default
 });

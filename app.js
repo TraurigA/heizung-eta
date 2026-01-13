@@ -3,6 +3,33 @@
 
 (() => {
   const cfg = window.HEIZLOG_CONFIG;
+  const APP_VERSION = (cfg && cfg.appVersion) ? String(cfg.appVersion) : "3.2.2";
+  const BUILD_DATE = (cfg && cfg.buildDate) ? String(cfg.buildDate) : "2026-01-13";
+  const CHANGELOG = [
+    {
+      "v": "3.2.2",
+      "date": "2026-01-13",
+      "items": [
+        "Monatsauswertung stabilisiert (kein 'y is not defined', leere Felder tolerant)",
+        "Tabs umbenannt: Monatsauswertung/Jahresauswertung, Tab bleibt nach Reload erhalten",
+        "Gesamtübersicht erweitert (Zähler korrekt, Strom ohne falsche Summe, Vollaststunden als h/min)",
+        "Einträge-Liste: Tageskarten (Datum als Titel) + Bearbeiten",
+        "Heute-Formular in Bereiche gegliedert",
+        "Schaltzeiträume (von–bis, Dauer) pro Heizkreis",
+        "Wartung (Event) + Heizjahr-Logik ab 04.09. (virtuell)"
+      ]
+    },
+    {
+      "v": "3.2.1",
+      "date": "2026-01-13",
+      "items": [
+        "Löschen-Button pro Tag",
+        "Update/Cache Reset (PWA)",
+        "App-Icon integriert",
+        "Gesamtübersicht (Basis)"
+      ]
+    }
+  ];
   const supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
   let session = null;
@@ -107,19 +134,23 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
     {id:"eintraege", label:"Einträge"},
     {id:"auswertung", label:"Monatsauswertung"},
     {id:"jahr", label:"Jahresauswertung"},
-    {id:"gesamt", label:"Gesamt"},
-    {id:"vergleich", label:"Vergleich"},
+        {id:"gesamt", label:"Gesamt"},
+{id:"vergleich", label:"Vergleich"},
     {id:"kosten", label:"Kosten"},
     {id:"hacks", label:"Hackschnitzel"},
     {id:"settings", label:"Einstellungen"},
   ];
   function showTab(id){
+    // remember last tab (only when logged in and not login tab)
+    try{
+      if(id && id !== "login") localStorage.setItem("heizlog_last_tab", id);
+    }catch(_){}
+
     document.querySelectorAll(".tab").forEach(el => {
       const ok = el.dataset.tab === id || (id==="login" && el.dataset.tab==="login");
       el.classList.toggle("hidden", !ok);
     });
     document.querySelectorAll(".tabbtn").forEach(b => b.classList.toggle("active", b.dataset.tab===id));
-    if(id==="gesamt") loadTotals();
   }
   function buildTabs(){
     const tabs = $("tabs");
@@ -146,10 +177,22 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
     $("syncBadge").textContent = navigator.onLine ? "online" : "offline";
     $("syncBadge").style.color = navigator.onLine ? "var(--ok)" : "var(--muted)";
 
+    // version badge
+    if($("verBadge")){
+      $("verBadge").textContent = `v${APP_VERSION}`;
+      $("verBadge").title = `Build: ${BUILD_DATE}`;
+    }
+
     if(loggedIn){
       $("whoami").textContent = session.user.email;
       buildTabs();
-      showTab("heute");
+      showTab((()=>{try{return localStorage.getItem("heizlog_last_tab")||"heute"}catch(_){return "heute"}})());
+      renderChangelog();
+      // default maintenance date = today
+      if($("maintDate")) $("maintDate").value = toISODate(new Date());
+      // precompute total overview (fast enough for typical datasets)
+      renderGesamt().catch(()=>{});
+      renderMaintenanceList().catch(()=>{});
       document.querySelector('[data-tab="login"]').classList.add("hidden");
       tabDefs.forEach(t => document.querySelector(`[data-tab="${t.id}"]`).classList.remove("hidden"));
     }else{
@@ -205,109 +248,22 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
     return data || [];
   }
 
-
-  async function fetchAllDaily(){
-    // Paged fetch to avoid limits on larger histories
-    const pageSize = 1000;
-    let from = 0;
-    let out = [];
-    while(true){
-      const { data, error } = await supabase
-        .from("daily_readings")
-        .select("*")
-        .eq("user_id", userId())
-        .order("day", { ascending: true })
-        .range(from, from + pageSize - 1);
-      if(error) throw error;
-      const rows = data || [];
-      out = out.concat(rows);
-      if(rows.length < pageSize) break;
-      from += pageSize;
-    }
-    return out;
+  async function fetchDailyMonth(monthStr){
+    const {start, end} = monthStartEnd(monthStr);
+    return await fetchDailyRange(toISODate(start), toISODate(end));
   }
 
-  function computeChipsTotalKg(rows){
-    // chips_kg_since_ash is a counter that resets after an ash-empty event.
-    // Reconstruct total consumption by summing positive deltas, treating decreases as reset.
-    let total = 0;
-    let prev = null;
-    for(const r of rows){
-      const v = (r.chips_kg_since_ash==null) ? null : Number(r.chips_kg_since_ash);
-      if(v==null || Number.isNaN(v)) continue;
-      if(prev==null){
-        total += Math.max(0, v);
-      }else if(v >= prev){
-        total += (v - prev);
-      }else{
-        // reset happened -> add current counter
-        total += Math.max(0, v);
-      }
-      prev = v;
-    }
-    return total;
+  
+  async function fetchDailyByDay(dayISO){
+    const { data, error } = await supabase
+      .from("daily_readings")
+      .select("*")
+      .eq("user_id", userId())
+      .eq("day", dayISO)
+      .limit(1);
+    if(error) throw error;
+    return data?.[0] || null;
   }
-
-  async function loadTotals(){
-    if(!session) return;
-    try{
-      if($("totalsInfo")) $("totalsInfo").textContent = "lädt...";
-      const rows = await fetchAllDaily();
-
-      let heatTotal = 0, heatRosi = 0, heatHouse = 0;
-      let elecHeat = 0, elecPump = 0;
-      let fullLoadMin = 0;
-      let bufferCharges = 0;
-      let days = 0;
-
-      for(const r of rows){
-        days += 1;
-
-        if(r.heat_total_kwh!=null) heatTotal += Number(r.heat_total_kwh) || 0;
-        if(r.heat_rosi_kwh!=null) heatRosi += Number(r.heat_rosi_kwh) || 0;
-        if(r.heat_total_kwh!=null && r.heat_rosi_kwh!=null){
-          heatHouse += (Number(r.heat_total_kwh)||0) - (Number(r.heat_rosi_kwh)||0);
-        }
-
-        if(r.elec_heating_kwh!=null) elecHeat += Number(r.elec_heating_kwh) || 0;
-        if(r.elec_pump_kwh!=null) elecPump += Number(r.elec_pump_kwh) || 0;
-
-        if(r.full_load_minutes!=null) fullLoadMin += Number(r.full_load_minutes) || 0;
-        if(r.buffer_charges!=null) bufferCharges += Number(r.buffer_charges) || 0;
-      }
-
-      const chipsTotal = computeChipsTotalKg(rows);
-      // current counter since last ash = last non-null value
-      let chipsSinceAshNow = null;
-      for(let i=rows.length-1;i>=0;i--){
-        const v = rows[i].chips_kg_since_ash;
-        if(v!=null && v!==""){ chipsSinceAshNow = Number(v); break; }
-      }
-
-      const fmt1 = (n) => (Math.round(n*10)/10).toLocaleString("de-DE", {minimumFractionDigits:1, maximumFractionDigits:1});
-      const fmt0 = (n) => (Math.round(n)).toLocaleString("de-DE");
-
-      $("totHeatTotal").textContent = fmt1(heatTotal);
-      $("totHeatRosi").textContent = fmt1(heatRosi);
-      $("totHeatHouse").textContent = fmt1(heatHouse);
-
-      $("totElecHeating").textContent = fmt1(elecHeat);
-      $("totElecPump").textContent = fmt1(elecPump);
-      $("totElecTotal").textContent = fmt1(elecHeat + elecPump);
-
-      $("totChipsTotal").textContent = fmt1(chipsTotal);
-      $("totChipsSinceAshNow").textContent = (chipsSinceAshNow==null || Number.isNaN(chipsSinceAshNow)) ? "–" : fmt1(chipsSinceAshNow);
-
-      $("totFullLoadH").textContent = fmt1(fullLoadMin/60);
-      $("totBufferCharges").textContent = fmt0(bufferCharges);
-      $("totDays").textContent = fmt0(days);
-
-      if($("totalsInfo")) $("totalsInfo").textContent = rows.length ? `Stand: ${rows[rows.length-1].day}` : "Keine Einträge";
-    }catch(e){
-      if($("totalsInfo")) $("totalsInfo").textContent = (e?.message || String(e));
-    }
-  }
-
 
   async function deleteDaily(dayISO){
     const { error } = await supabase
@@ -318,34 +274,30 @@ $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${
     if(error) throw error;
   }
 
-
-  
-  async function hardRefresh(){
-    try{
-      // Unregister service workers (important for iOS PWA cache issues)
-      if("serviceWorker" in navigator){
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.unregister()));
-      }
-      // Delete all caches
-      if("caches" in window){
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      }
-    }finally{
-      // Force a fresh navigation (adds a cache-busting query)
-      const u = new URL(location.href);
-      u.searchParams.set("v", String(Date.now()));
-      location.href = u.toString();
-    }
+  // ---- Maintenance events (optional table) ----
+  async function addMaintenanceEvent({day, note, snapshot}){
+    const payload = {
+      user_id: userId(),
+      day,
+      ts: new Date().toISOString(),
+      note: note || null,
+      snapshot: snapshot || null,
+    };
+    const { error } = await supabase.from("maintenance_events").insert(payload);
+    if(error) throw error;
   }
 
-async function fetchDailyMonth(monthStr){
-    const {start, end} = monthStartEnd(monthStr);
-    return await fetchDailyRange(toISODate(start), toISODate(end));
+  async function fetchMaintenanceEvents(){
+    const { data, error } = await supabase
+      .from("maintenance_events")
+      .select("*")
+      .eq("user_id", userId())
+      .order("day", { ascending: false });
+    if(error) throw error;
+    return data || [];
   }
 
-  async function fetchChippingRange(startISO, endISO){
+async function fetchChippingRange(startISO, endISO){
     const { data, error } = await supabase
       .from("chipping_events")
       .select("*")
@@ -506,6 +458,7 @@ async function fetchDailyMonth(monthStr){
 
   // ---------- Month analysis ----------
   async function analyzeMonth(monthStr){
+    const y = Number(String(monthStr).slice(0,4));
     const {start, end} = monthStartEnd(monthStr);
     const padStart = new Date(start.getFullYear(), start.getMonth(), start.getDate()-40);
     const padEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate()+40);
@@ -676,6 +629,7 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
 
   // ---------- Heizjahr cost ----------
   async function calcHeizjahr(hyStartISO){
+    const y = Number(String(hyStartISO).slice(0,4));
     const start = parseISODate(hyStartISO);
     const {start:hs, end:he} = heatingYearRange(start);
     const padStart = new Date(hs.getFullYear(), hs.getMonth(), hs.getDate()-50);
@@ -837,53 +791,72 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
     $("monthInfo").textContent = `${rows.length} Einträge gefunden.`;
     const list = $("entryList");
     list.innerHTML = "";
-    rows.slice().reverse().forEach(r => {
-      const right = document.createElement("div");
-      right.innerHTML = `<strong>${r.day}</strong><small>${r.time_hhmm || ""} ${r.note || ""}</small>`;
 
-      const left = document.createElement("div");
-      const heat = (r.heat_total_kwh==null) ? "—" : fmt1(r.heat_total_kwh);
-      const rosi = (r.heat_rosi_kwh==null) ? "—" : fmt1(r.heat_rosi_kwh);
-      const house = (r.heat_total_kwh==null || r.heat_rosi_kwh==null) ? "—" : fmt1(Number(r.heat_total_kwh) - Number(r.heat_rosi_kwh));
-      left.innerHTML = `<strong>Wärme (Zähler)</strong><small>Ges: ${heat} | ${s.houseName}: ${house} | ${s.rosiName}: ${rosi}</small>`;
-
+    const sorted = rows.slice().sort((a,b)=>b.day.localeCompare(a.day));
+    for(const r of sorted){
       const it = document.createElement("div");
       it.className = "item";
-      it.appendChild(left);
-      it.appendChild(right);
-      // Delete button (stops click from opening the entry)
-      const del = document.createElement("button");
-      del.className = "danger";
-      del.textContent = "🗑";
-      del.title = "Eintrag löschen";
-      del.style.width = "auto";
-      del.style.padding = "6px 10px";
-      del.style.marginLeft = "8px";
-      del.addEventListener("click", async (ev) => {
+
+      const left = document.createElement("div");
+      const t = r.time_hhmm ? ` · ${r.time_hhmm}` : "";
+      left.innerHTML = `<strong>${r.day}${t}</strong><small>${escapeHtml(r.note||"")}</small>`;
+
+      // small summary line
+      const heatRosi = (r.heat_rosi_kwh==null) ? "—" : fmt1(r.heat_rosi_kwh);
+      const elecHeat = (r.elec_heating_kwh==null) ? "—" : fmt1(r.elec_heating_kwh);
+      const chips = (r.chips_kg_since_ash==null) ? "—" : fmt1(r.chips_kg_since_ash);
+      const extra = document.createElement("div");
+      extra.className = "muted";
+      extra.style.marginTop = "4px";
+      extra.innerHTML = `Wärme ${escapeHtml(s.rosiName)}: ${heatRosi} · Strom Heizung: ${elecHeat} · Hacks: ${chips}`;
+      left.appendChild(extra);
+
+      const right = document.createElement("div");
+      right.style.display="flex";
+      right.style.gap="8px";
+      right.style.alignItems="center";
+
+      const btnEdit = document.createElement("button");
+      btnEdit.className="secondary";
+      btnEdit.style.width="auto";
+      btnEdit.textContent="Bearbeiten";
+      btnEdit.addEventListener("click", async (ev)=>{
         ev.stopPropagation();
-        if(!confirm(`Eintrag für ${r.day} wirklich löschen?`)) return;
+        $("day").value = r.day;
+        await loadDayToForm(r.day);
+        showTab("heute");
+        $("todayMsg").textContent = `Eintrag ${r.day} geladen (Bearbeiten).`;
+      });
+
+      const btnDel = document.createElement("button");
+      btnDel.className="danger";
+      btnDel.style.width="auto";
+      btnDel.textContent="🗑";
+      btnDel.title="Löschen";
+      btnDel.addEventListener("click", async (ev)=>{
+        ev.stopPropagation();
+        if(!confirm(`Eintrag für ${r.day} löschen?`)) return;
         try{
           await deleteDaily(r.day);
-          $("monthInfo").textContent = "Gelöscht ✅";
           await loadMonthList(monthStr);
         }catch(e){
-          $("monthInfo").textContent = e.message || String(e);
+          alert(e.message || String(e));
         }
       });
 
-      // Put the delete button on the right side
-      right.style.display = "flex";
-      right.style.alignItems = "center";
-      right.style.justifyContent = "flex-end";
-      right.appendChild(del);
+      right.appendChild(btnEdit);
+      right.appendChild(btnDel);
 
-      it.addEventListener("click", async () => {
+      it.appendChild(left);
+      it.appendChild(right);
+      it.addEventListener("click", async ()=>{
         $("day").value = r.day;
         await loadDayToForm(r.day);
         showTab("heute");
       });
+
       list.appendChild(it);
-    });
+    }
   }
 
   async function loadChippingList(monthStr){
@@ -916,7 +889,7 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
 
   async function exportJson(){
     const uid = userId();
-    const tables = ["daily_readings","ash_events","chipping_events","heat_price_heating_year"];
+    const tables = ["daily_readings","ash_events","chipping_events","maintenance_events","heat_price_heating_year"];
     const out = { exportedAt: new Date().toISOString(), user: session.user.email, user_id: uid, tables:{} };
     for(const t of tables){
       const { data, error } = await supabase.from(t).select("*").eq("user_id", uid);
@@ -933,24 +906,234 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
   }
 
   // ---------- Wiring ----------
-  async function init(){
+  async 
+  // ---------- Changelog ----------
+  function renderChangelog(){
+    const box = $("changelogBox");
+    if(!box) return;
+    const lines = CHANGELOG.map(rel => {
+      const items = (rel.items||[]).map(it => `<li>${escapeHtml(it)}</li>`).join("");
+      return `<div style="margin-bottom:10px;"><strong>v${escapeHtml(rel.v)}</strong> <span class="muted">(${escapeHtml(rel.date||"")})</span><ul style="margin:6px 0 0 18px;">${items}</ul></div>`;
+    }).join("");
+    box.innerHTML = lines || "<span class=\"muted\">Noch keine Einträge.</span>";
+  }
+
+  // ---------- Service Worker hard reload ----------
+  async function hardReload(){
+    // Clear caches
+    if("caches" in window){
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    // Unregister SW
+    if("serviceWorker" in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    // Force reload (bypass cache)
+    const url = new URL(location.href);
+    url.searchParams.set("v", APP_VERSION);
+    url.searchParams.set("t", String(Date.now()));
+    location.replace(url.toString());
+  }
+
+  // ---------- Helpers ----------
+  function escapeHtml(s){
+    return String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  function fmtHM(totalMinutes){
+    if(totalMinutes == null || !isFinite(totalMinutes)) return "—";
+    const m = Math.max(0, Math.round(Number(totalMinutes)));
+    const h = Math.floor(m/60);
+    const r = m%60;
+    return `${h} h ${r} min`;
+  }
+
+  // Compute intervals (true-runs) from daily boolean snapshots
+  function computeIntervals(rows, field){
+    const out = [];
+    const sorted = rows.slice().sort((a,b)=>a.day.localeCompare(b.day));
+    let curStart = null;
+    let prevDay = null;
+
+    for(const r of sorted){
+      const d = r.day;
+      const val = !!r[field];
+      if(val){
+        if(curStart == null){
+          curStart = d;
+        }else if(prevDay){
+          const pd = parseISODate(prevDay);
+          const cd = parseISODate(d);
+          if(dayDiff(pd, cd) !== 1){
+            // gap -> close previous interval at prevDay
+            out.push({start:curStart, end:prevDay, days: dayDiff(parseISODate(curStart), parseISODate(prevDay))+1});
+            curStart = d;
+          }
+        }
+      }else{
+        if(curStart != null){
+          out.push({start:curStart, end:prevDay || d, days: dayDiff(parseISODate(curStart), parseISODate(prevDay || d))+1});
+          curStart = null;
+        }
+      }
+      prevDay = d;
+    }
+    if(curStart != null && prevDay){
+      out.push({start:curStart, end:prevDay, days: dayDiff(parseISODate(curStart), parseISODate(prevDay))+1});
+    }
+    return out;
+  }
+
+  function renderIntervalsHTML(rows){
+    const s = loadSettings();
+    const defs = [
+      {field:"hk_house", label:`HK ${s.houseName}`},
+      {field:"hk_rosi", label:`HK ${s.rosiName}`},
+      {field:"fbh_rosi", label:`FBH ${s.rosiName}`},
+    ];
+    const blocks = defs.map(d => {
+      const ints = computeIntervals(rows, d.field);
+      if(!ints.length) return `<div><strong>${escapeHtml(d.label)}:</strong> —</div>`;
+      const lis = ints.map(it => `<li>${escapeHtml(it.start)} → ${escapeHtml(it.end)} (${it.days} Tage)</li>`).join("");
+      return `<div style="margin-bottom:8px;"><strong>${escapeHtml(d.label)}:</strong><ul style="margin:6px 0 0 18px;">${lis}</ul></div>`;
+    }).join("");
+    return blocks || "—";
+  }
+
+  // ---------- Gesamt ----------
+  function sumPositiveDeltas(rows, field, allowResetToCurrent=false){
+    const sorted = rows.slice().sort((a,b)=>a.day.localeCompare(b.day));
+    let total = 0;
+    for(let i=0;i<sorted.length-1;i++){
+      const a=sorted[i], b=sorted[i+1];
+      if(a[field]==null || b[field]==null) continue;
+      let delta = Number(b[field]) - Number(a[field]);
+      if(allowResetToCurrent && delta < 0){
+        delta = Number(b[field]); // treat reset as restart
+      }
+      if(delta > 0) total += delta;
+    }
+    return total;
+  }
+
+  function lastValue(rows, field){
+    const sorted = rows.slice().sort((a,b)=>a.day.localeCompare(b.day));
+    for(let i=sorted.length-1;i>=0;i--){
+      const v = sorted[i][field];
+      if(v!=null && isFinite(v)) return Number(v);
+    }
+    return null;
+  }
+
+  function heatingYearStartFor(dateObj){
+    const [mm,dd] = String(cfg.heatingYearStart||"09-04").split("-").map(x=>Number(x));
+    const y = dateObj.getFullYear();
+    const startThis = new Date(y, mm-1, dd);
+    if(dateObj >= startThis) return startThis;
+    return new Date(y-1, mm-1, dd);
+  }
+
+  async function renderGesamt(){
+    const warn = $("gesamtWarn");
+    if(warn){ warn.classList.add("hidden"); warn.textContent=""; }
+
+    const { data, error } = await supabase
+      .from("daily_readings")
+      .select("*")
+      .eq("user_id", userId())
+      .order("day", { ascending: true });
+    if(error) throw error;
+    const rows = data || [];
+    if(!rows.length){
+      $("gesamtKpis").innerHTML = "<div class=\"muted\">Noch keine Einträge vorhanden.</div>";
+      $("heizjahrBox").innerHTML = "";
+      $("switchBoxGesamt").innerHTML = "";
+      return;
+    }
+
+    // Verbrauch über positive Deltas (Zählerstände)
+    const heatTotal = sumPositiveDeltas(rows, "heat_total_kwh");
+    const heatRosi  = sumPositiveDeltas(rows, "heat_rosi_kwh");
+    const heatHouse = Math.max(0, heatTotal - heatRosi);
+
+    const elecHeat = sumPositiveDeltas(rows, "elec_heating_kwh");
+    const elecPump = sumPositiveDeltas(rows, "elec_pump_kwh");
+    const chipsTot = sumPositiveDeltas(rows, "chips_kg_since_ash", true);
+
+    // Zählerstände (nicht summieren)
+    const fullMin = lastValue(rows, "full_load_minutes");
+    const bufferZ = lastValue(rows, "buffer_charges");
+
+    const daysWithEntry = rows.length;
+
+    const s = loadSettings();
+
+    const kpis = [
+      {k:"Wärme gesamt (kWh)", v: heatTotal ? fmt1(heatTotal) : "—"},
+      {k:`Wärme ${s.houseName} (kWh)`, v: heatHouse ? fmt1(heatHouse) : "—"},
+      {k:`Wärme ${s.rosiName} (kWh)`, v: heatRosi ? fmt1(heatRosi) : "—"},
+      {k:"Strom Heizung (kWh)", v: elecHeat ? fmt1(elecHeat) : "—"},
+      {k:"Strom Fernwärmeleitung (kWh)", v: elecPump ? fmt1(elecPump) : "—"},
+      {k:"Hackschnitzel gesamt (kg)", v: chipsTot ? fmt1(chipsTot) : "—"},
+      {k:"Vollaststunden (Zählerstand)", v: fmtHM(fullMin)},
+      {k:"Pufferladungen (Zählerstand)", v: (bufferZ==null ? "—" : fmt0(bufferZ))},
+      {k:"Tage mit Eintrag", v: String(daysWithEntry)},
+    ];
+    $("gesamtKpis").innerHTML = kpis.map(x => `<div class="kpiBox"><div class="muted">${escapeHtml(x.k)}</div><div style="font-size:18px; font-weight:700;">${escapeHtml(x.v)}</div></div>`).join("");
+
+    // Heizjahr (fix ab 04.09.)
+    const now = new Date();
+    const hyStart = heatingYearStartFor(now);
+    const hyLabel = `${hyStart.getFullYear()}/${String(hyStart.getFullYear()+1).slice(-2)}`;
+    const hyISO = toISODate(hyStart);
+    const hyRows = rows.filter(r => r.day >= hyISO);
+
+    const hyHeatTotal = sumPositiveDeltas(hyRows, "heat_total_kwh");
+    const hyHeatRosi  = sumPositiveDeltas(hyRows, "heat_rosi_kwh");
+    const hyHeatHouse = Math.max(0, hyHeatTotal - hyHeatRosi);
+    const hyElecHeat  = sumPositiveDeltas(hyRows, "elec_heating_kwh");
+    const hyElecPump  = sumPositiveDeltas(hyRows, "elec_pump_kwh");
+    const hyChips     = sumPositiveDeltas(hyRows, "chips_kg_since_ash", true);
+
+    $("heizjahrBox").innerHTML = `
+      <div><strong>Heizjahr:</strong> ${escapeHtml(hyLabel)} (seit ${escapeHtml(hyISO)})</div>
+      <div style="margin-top:6px;">
+        Wärme: Gesamt ${fmt1(hyHeatTotal)} kWh · ${escapeHtml(s.houseName)} ${fmt1(hyHeatHouse)} · ${escapeHtml(s.rosiName)} ${fmt1(hyHeatRosi)}
+      </div>
+      <div style="margin-top:6px;">
+        Strom: Heizung ${fmt1(hyElecHeat)} kWh · Fernwärmeleitung ${fmt1(hyElecPump)} kWh
+      </div>
+      <div style="margin-top:6px;">
+        Hackschnitzel: ${fmt1(hyChips)} kg
+      </div>
+    `;
+
+    // Schaltzeiträume (gesamt)
+    $("switchBoxGesamt").innerHTML = renderIntervalsHTML(rows);
+  }
+
+  async function renderMaintenanceList(){
+    const msg = $("maintMsg");
+    try{
+      const events = await fetchMaintenanceEvents();
+      // show latest in heizjahrBox? keep simple: list in changelogBox? We'll append in maintMsg if no dedicated area.
+      // For now, just keep silent.
+      if(msg && events.length){
+        // no-op
+      }
+    }catch(e){
+      // If table doesn't exist, give a helpful hint once.
+      if(msg){
+        msg.textContent = "Hinweis: Für Wartungen brauchst du eine Supabase-Tabelle 'maintenance_events' (siehe README).";
+      }
+    }
+  }
+
+function init(){
     applySettings();
     setTodayDefaults();
-    // Version badge in UI
-    const ver = (window.HEIZLOG_VERSION && window.HEIZLOG_VERSION.version) ? window.HEIZLOG_VERSION.version : "dev";
-    const bdate = (window.HEIZLOG_VERSION && window.HEIZLOG_VERSION.buildDate) ? window.HEIZLOG_VERSION.buildDate : "";
-    if($("verBadge")){
-      $("verBadge").textContent = "v" + ver;
-      $("verBadge").title = bdate ? (`App-Version v${ver} (${bdate})`) : (`App-Version v${ver}`);
-    }
-
-    // Auto-reload when a new Service Worker takes control
-    if("serviceWorker" in navigator){
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        window.location.reload();
-      });
-    }
-
 
     window.addEventListener("online", renderAuthState);
     window.addEventListener("offline", renderAuthState);
@@ -985,28 +1168,6 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
       try{ await loadDayToForm($("day").value); }catch(e){ $("todayMsg").textContent = e.message || String(e); }
     });
 
-    $("btnDeleteDay")?.addEventListener("click", async () => {
-      $("todayMsg").textContent = "";
-      try{
-        const d = $("day").value;
-        if(!d) throw new Error("Bitte Datum wählen.");
-        if(!confirm(`Eintrag für ${d} wirklich löschen?`)) return;
-        await deleteDaily(d);
-        $("todayMsg").textContent = "Gelöscht ✅";
-        await loadDayToForm(d); // reload -> shows empty state
-        // refresh month list if open
-        const m = $("month")?.value;
-        if(m) await loadMonthList(m);
-      }catch(e){
-        $("todayMsg").textContent = e.message || String(e);
-      }
-    });
-
-    $("btnHardRefresh")?.addEventListener("click", async () => {
-      if(!confirm("Update/Cache reset durchführen?\n\nDas lädt die App komplett neu und behebt oft iPhone/PWA-Cache-Probleme.")) return;
-      await hardRefresh();
-    });
-
     $("btnAsh").addEventListener("click", async () => {
       const note = prompt("Notiz (optional), z.B. 'Asche geleert'");
       try{
@@ -1020,6 +1181,57 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
     $("btnLoadMonth").addEventListener("click", async () => {
       try{ await loadMonthList($("monthPick").value); }catch(e){ $("monthInfo").textContent = e.message || String(e); }
     });
+
+    $("btnDeleteToday").addEventListener("click", async () => {
+      $("todayMsg").textContent = "";
+      const day = $("day").value;
+      if(!day){ $("todayMsg").textContent = "Kein Datum gewählt."; return; }
+      if(!confirm(`Eintrag für ${day} wirklich löschen?`)) return;
+      try{
+        await deleteDaily(day);
+        $("todayMsg").textContent = "Eintrag gelöscht.";
+      }catch(e){
+        $("todayMsg").textContent = e.message || String(e);
+      }
+    });
+
+    $("btnResetCache").addEventListener("click", async () => {
+      $("todayMsg").textContent = "";
+      try{
+        await hardReload();
+        $("todayMsg").textContent = "Cache zurückgesetzt. Seite lädt neu ...";
+      }catch(e){
+        $("todayMsg").textContent = e.message || String(e);
+      }
+    });
+
+    $("btnReloadGesamt")?.addEventListener("click", async () => {
+      try{ await renderGesamt(); }
+      catch(e){
+        const box = $("gesamtWarn");
+        if(box){ box.textContent = e.message || String(e); box.classList.remove("hidden"); }
+      }
+    });
+
+    $("btnAddMaint")?.addEventListener("click", async () => {
+      $("maintMsg").textContent = "";
+      try{
+        const d = $("maintDate").value;
+        if(!d) throw new Error("Bitte Wartungsdatum wählen.");
+        const note = $("maintNote").value ? String($("maintNote").value) : null;
+
+        // snapshot from daily reading of that date (if exists)
+        const snap = await fetchDailyByDay(d);
+        await addMaintenanceEvent({ day:d, note, snapshot: snap });
+        $("maintMsg").textContent = "Wartung gespeichert.";
+        $("maintNote").value = "";
+        await renderMaintenanceList();
+      }catch(e){
+        $("maintMsg").textContent = e.message || String(e);
+      }
+    });
+
+
 
     $("btnAnalyze").addEventListener("click", async () => {
       $("kpis").innerHTML = "";
@@ -1107,9 +1319,6 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
 }
 
     // derived calc listeners
-    // Gesamtübersicht
-    $("btnTotalsRefresh")?.addEventListener("click", loadTotals);
-
     $("heat_total_kwh")?.addEventListener("input", updateDerivedHeat);
     $("heat_rosi_kwh")?.addEventListener("input", updateDerivedHeat);
 

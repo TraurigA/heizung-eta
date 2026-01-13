@@ -106,13 +106,13 @@
     ul{margin:8px 0 0 18px; padding:0}
     li{margin:6px 0}
   
-    .grid2{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
-    @media (max-width: 980px){ .grid2{ grid-template-columns:1fr; } }
-    .card.inner{ background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); }
-    .h3{ margin:0 0 8px 0; font-size:14px; color:var(--text); opacity:.95; }
-    .kv{ display:flex; justify-content:space-between; align-items:baseline; padding:6px 0; border-top:1px solid rgba(255,255,255,.06); }
-    .kv:first-of-type{ border-top:none; }
-    .kv span{ color:var(--muted); }
+
+.kpiBox{
+  background: rgba(255,255,255,0.03);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px;
+}
 </style>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -130,7 +130,7 @@
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
         <span class="badge" id="syncBadge">offline</span>
-        <span class="badge" id="verBadge" title="App-Version">v—</span>
+        <span class="badge" id="verBadge">v?</span>
         <button class="secondary" id="btnLogout" style="width:auto;">Logout</button>
       </div>
     </div>
@@ -190,6 +190,9 @@
         <input id="heat_house_calc" type="text" disabled placeholder="wird automatisch berechnet" />
       </div>
       <div>
+        <div class="hr"></div>
+    <h3 style="margin:0 0 8px 0; font-size:14px;">Strom</h3>
+
         <label>Strom Heizung gesamt (kWh, Zähler)</label>
         <input id="elec_heating_kwh" type="number" step="0.01" inputmode="decimal" placeholder="z.B. 12345.67" />
       </div>
@@ -198,6 +201,9 @@
         <input id="elec_pump_kwh" type="number" step="0.01" inputmode="decimal" placeholder="z.B. 234.12" />
       </div>
       <div>
+        <div class="hr"></div>
+    <h3 style="margin:0 0 8px 0; font-size:14px;">Betrieb</h3>
+
         <label>Vollaststunden (h)</label>
         <input id="full_h" type="number" step="1" inputmode="numeric" placeholder="z.B. 2994" />
       </div>
@@ -210,7 +216,7 @@
         <input id="buffer_charges" type="number" step="1" inputmode="numeric" placeholder="z.B. 1038" />
       </div>
       <div>
-        <label>Hackschnitzel seit letzter Asche-Entleerung (kg)</label>
+        <label>Hackschnitzel seit Asche (kg, Zähler)</label>
         <input id="chips_kg_since_ash" type="number" step="0.1" inputmode="decimal" placeholder="z.B. 343.0" />
       </div>
       <div>
@@ -218,6 +224,9 @@
         <input id="temp_c" type="number" step="0.1" inputmode="decimal" placeholder="z.B. -4.8" />
       </div>
       <div>
+        <div class="hr"></div>
+    <h3 style="margin:0 0 8px 0; font-size:14px;">Notiz</h3>
+
         <label>Notiz (optional)</label>
         <input id="note" placeholder="z.B. Asche geleert, Abwesenheit, etc." />
       </div>
@@ -235,11 +244,11 @@
       <button class="secondary" id="btnLoadToday">Heute laden</button>
       <button class="danger" id="btnAsh">Asche entleert (Event)</button>
     </div>
-    <div class="row" style="margin-top:8px;">
-      <button class="danger" id="btnDeleteDay">Diesen Tag löschen</button>
-      <button class="secondary" id="btnHardRefresh">Update/Cache reset</button>
-    </div>
 
+    <div class="row" style="margin-top:10px;">
+      <button class="danger" id="btnDeleteToday">Diesen Tag löschen</button>
+      <button class="secondary" id="btnResetCache">Update/Cache reset</button>
+    </div>
 
     <div class="muted" id="todayMsg" style="margin-top:8px;"></div>
   </section>
@@ -263,7 +272,7 @@
 
   <!-- AUSWERTUNG MONAT -->
   <section class="tab card hidden" data-tab="auswertung">
-    <h2 style="margin:0 0 8px 0; font-size:16px;">Auswertung (Monat)</h2>
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Monatsauswertung</h2>
     <div class="row">
       <div>
         <label>Monat</label>
@@ -311,7 +320,7 @@
 
   <!-- AUSWERTUNG JAHR -->
   <section class="tab card hidden" data-tab="jahr">
-    <h2 style="margin:0 0 8px 0; font-size:16px;">Auswertung (Jahr)</h2>
+    <h2 style="margin:0 0 8px 0; font-size:16px;">Jahresauswertung</h2>
 
     <div class="row">
       <div>
@@ -358,51 +367,41 @@
     </div>
   </section>
 
-  <!-- VERGLEICH -->
   
   <!-- GESAMT -->
   <section class="tab card hidden" data-tab="gesamt">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Gesamtübersicht</h2>
+
     <div class="row">
-      <div>
-        <button id="btnTotalsRefresh">Aktualisieren</button>
+      <div style="flex:1;">
+        <div class="muted">Gesamtwerte werden aus allen vorhandenen Einträgen berechnet.</div>
       </div>
-      <div>
-        <div class="small" id="totalsInfo" style="text-align:right;"></div>
+      <div style="display:flex; gap:8px; align-items:flex-end;">
+        <button class="secondary" id="btnReloadGesamt" style="width:auto;">Neu berechnen</button>
       </div>
     </div>
 
-    <div class="grid2">
-      <div class="card inner">
-        <h3 class="h3">Wärme (kWh)</h3>
-        <div class="kv"><span>Gesamt</span><b id="totHeatTotal">–</b></div>
-        <div class="kv"><span>Wohnhaus</span><b id="totHeatHouse">–</b></div>
-        <div class="kv"><span>Gebäude 2 (Rosi)</span><b id="totHeatRosi">–</b></div>
-      </div>
+    <div class="hr"></div>
+    <div id="gesamtWarn" class="warn hidden"></div>
 
-      <div class="card inner">
-        <h3 class="h3">Strom (kWh)</h3>
-        <div class="kv"><span>Heizung</span><b id="totElecHeating">–</b></div>
-        <div class="kv"><span>Pumpe</span><b id="totElecPump">–</b></div>
-        <div class="kv"><span>Summe</span><b id="totElecTotal">–</b></div>
-      </div>
+    <div class="hr"></div>
+    <div class="kpi" id="gesamtKpis"></div>
 
-      <div class="card inner">
-        <h3 class="h3">Hackschnitzel (kg)</h3>
-        <div class="kv"><span>Gesamtverbrauch</span><b id="totChipsTotal">–</b></div>
-        <div class="kv"><span>Aktuell seit letzter Asche</span><b id="totChipsSinceAshNow">–</b></div>
-      </div>
+    <div class="hr"></div>
+    <div>
+      <h3 style="margin:0 0 8px 0; font-size:14px;">Heizjahr (Start: 04.09.)</h3>
+      <div id="heizjahrBox" class="muted"></div>
+    </div>
 
-      <div class="card inner">
-        <h3 class="h3">Betrieb</h3>
-        <div class="kv"><span>Vollaststunden</span><b id="totFullLoadH">–</b></div>
-        <div class="kv"><span>Pufferladungen</span><b id="totBufferCharges">–</b></div>
-        <div class="kv"><span>Tage mit Eintrag</span><b id="totDays">–</b></div>
-      </div>
+    <div class="hr"></div>
+    <div>
+      <h3 style="margin:0 0 8px 0; font-size:14px;">Schaltzeiträume (gesamt)</h3>
+      <div id="switchBoxGesamt" class="muted"></div>
     </div>
   </section>
 
-<section class="tab card hidden" data-tab="vergleich">
+<!-- VERGLEICH -->
+  <section class="tab card hidden" data-tab="vergleich">
     <h2 style="margin:0 0 8px 0; font-size:16px;">Vergleich (Jahr A vs Jahr B)</h2>
     <div class="row">
       <div>
@@ -549,11 +548,34 @@
 
     <div class="hr"></div>
     <button class="secondary" id="btnExportJson">JSON Backup exportieren</button>
-  </section>
+  
+    <div class="hr"></div>
+    <h3 style="margin:0 0 8px 0; font-size:14px;">Wartung</h3>
+    <div class="row">
+      <div>
+        <label>Wartungsdatum</label>
+        <input id="maintDate" type="date" />
+      </div>
+      <div>
+        <label>Notiz (optional)</label>
+        <input id="maintNote" placeholder="z.B. Reinigung, Kontrolle, Teile gewechselt ..." />
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <button class="secondary" id="btnAddMaint">Wartung speichern</button>
+      <div class="muted" id="maintMsg" style="padding-top:10px;"></div>
+    </div>
+    <div class="muted" style="margin-top:6px;">Hinweis: Wartung ist ein Ereignis (Datum kann vor dem 04.09. liegen). Heizjahr beginnt immer fix am 04.09.</div>
+
+    <div class="hr"></div>
+    <h3 style="margin:0 0 8px 0; font-size:14px;">Changelog</h3>
+    <div id="changelogBox" class="muted"></div>
+
+</section>
 
 <script>
   if("serviceWorker" in navigator){
-    navigator.serviceWorker.register("sw.js?v="+encodeURIComponent((window.HEIZLOG_VERSION&&window.HEIZLOG_VERSION.version)||"")).catch(()=>{});
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
   }
 </script>
 </body>
