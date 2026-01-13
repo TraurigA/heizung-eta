@@ -1,4 +1,4 @@
-Heizungs-Logbuch – Komplett-Update (v3.2.2)
+Heizungs-Logbuch – Komplett-Update (v3.2.3)
 
 Dieses ZIP enthält ALLE Dateien (index.html, app.js, config.js, manifest.json, sw.js, Icons).
 
@@ -17,7 +17,7 @@ Wenn am iPhone noch alte Version angezeigt wird:
 - notfalls Website-Daten löschen / App neu hinzufügen (Service Worker Cache)
 
 
-Neu in v3.2.2:
+Neu in v3.2.3:
 - Monatsauswertung stabilisiert (kein 'y is not defined')
 - Tabs: Monatsauswertung/Jahresauswertung + Tab bleibt erhalten
 - Gesamtübersicht (Zähler korrekt, Strom ohne falsche Summe, Vollaststunden als h/min)

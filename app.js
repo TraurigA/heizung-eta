@@ -1131,7 +1131,7 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
     }
   }
 
-function init(){
+async function init(){
     applySettings();
     setTodayDefaults();
 
@@ -1315,7 +1315,7 @@ function init(){
     });
 
     await refreshSession();
-      updateDerivedHeat();
+    updateDerivedHeat();
 }
 
     // derived calc listeners
