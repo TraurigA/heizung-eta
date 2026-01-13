@@ -106,7 +106,7 @@
     $("lblHeatTotal").textContent = `Wärme gesamt (kWh, Zähler)`;
         const lblHouse = $("lblHeatHouse");
     if(lblHouse) lblHouse.textContent = `Wärme ${s.houseName} (kWh, berechnet)`;
-$("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${s.rosiName}.`;
+if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Gesamt − Wärme ${s.rosiName}.`;
 
     const cbLabels = document.querySelectorAll(".checkboxes label");
     if(cbLabels.length >= 3){
@@ -457,137 +457,106 @@ async function fetchChippingRange(startISO, endISO){
   }
 
   // ---------- Month analysis ----------
-  async function analyzeMonth(monthStr){
-    const y = Number(String(monthStr).slice(0,4));
+    async function analyzeMonth(monthStr){
+    // Robust monthly analysis: tolerant to missing fields, renders into chartDaily + statusMonth
     const {start, end} = monthStartEnd(monthStr);
     const padStart = new Date(start.getFullYear(), start.getMonth(), start.getDate()-40);
-    const padEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate()+40);
+    const padEnd   = new Date(end.getFullYear(), end.getMonth(), end.getDate()+40);
+
     const readings = await fetchDailyRange(toISODate(padStart), toISODate(padEnd));
+    const metric = $("anMetric")?.value || "heat_breakdown";
+    const y = Number(String(monthStr).slice(0,4));
 
-    const s = loadSettings();
-
+    // daily series (Option B distribution)
     const dailyHeatTotal = distributeDaily(readings, monthStr, "heat_total_kwh");
     const dailyHeatRosi  = distributeDaily(readings, monthStr, "heat_rosi_kwh");
-    
-    const dailyHeatHouse = dailyHeatTotal.map((v,i)=>v - (dailyHeatRosi[i]||0));
-const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
+    const dailyHeatHouse = dailyHeatTotal.map((v,i)=> (v||0) - (dailyHeatRosi[i]||0));
+
+    const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
     const dailyElecPump  = distributeDaily(readings, monthStr, "elec_pump_kwh");
-    const dailyFullHours = distributeDaily(readings, monthStr, "full_load_minutes").map(v=>v/60);
+    const dailyFullHours = distributeDaily(readings, monthStr, "full_load_minutes").map(v=>(v||0)/60);
     const dailyBuffer    = distributeDaily(readings, monthStr, "buffer_charges");
     const dailyChipsKg   = distributeDaily(readings, monthStr, "chips_kg_since_ash");
 
+    const nDays = dailyHeatTotal.length || daysInMonth(start.getFullYear(), start.getMonth()+1);
+
+    // KPIs
     const heatTotal = sum(dailyHeatTotal);
     const heatRosi  = sum(dailyHeatRosi);
     const heatHouse = heatTotal - heatRosi;
-
-    const elecHeat = sum(dailyElecHeat);
-    const elecPump = sum(dailyElecPump);
+    const elecHeat  = sum(dailyElecHeat);
+    const elecPump  = sum(dailyElecPump);
     const fullHours = sum(dailyFullHours);
     const bufferCnt = sum(dailyBuffer);
     const chipsKg   = sum(dailyChipsKg);
 
-    const nDays = end.getDate();
-    const avgHeatTotal = heatTotal / nDays;
-    const avgHeatRosi = heatRosi / nDays;
-    const avgElecHeat = elecHeat / nDays;
-    const avgElecPump = elecPump / nDays;
-    const avgHours = fullHours / nDays;
-    const avgBuffer = bufferCnt / nDays;
-    const avgChips = chipsKg / nDays;
-
-    const peakHeatTotal = max(dailyHeatTotal);
-    const peakChips = max(dailyChipsKg);
-    const peakHours = max(dailyFullHours);
-
-    // warnings
-    const warn = $("monthWarn");
-    warn.classList.add("hidden");
-    warn.innerHTML = "";
-    if(heatHouse < -0.0001){
-      warn.classList.remove("hidden");
-      warn.innerHTML = `<strong>Achtung:</strong> Für diesen Monat ist (Gesamt − ${s.rosiName}) negativ. Prüfe ob Gesamt-Zählerstände ≥ ${s.rosiName}-Zählerstände sind.`;
-    }
-
-    const kpis = [
+    $("kpis").innerHTML = [
       {k:"Wärme Gesamt (kWh)", v: fmt1(heatTotal)},
-      {k:`Wärme ${s.rosiName} (kWh)`, v: fmt1(heatRosi)},
-      {k:`Wärme ${s.houseName} (kWh)`, v: fmt1(heatHouse)},
-      {k:"Ø Wärme Gesamt / Tag", v: fmt1(avgHeatTotal)},
-      {k:`Ø Wärme ${s.rosiName} / Tag`, v: fmt1(avgHeatRosi)},
-      {k:"Strom Heizung (kWh)", v: fmt2(elecHeat)},
-      {k:"Ø Strom Heizung / Tag", v: fmt2(avgElecHeat)},
-      {k:"Strom Fernwärme (kWh)", v: fmt2(elecPump)},
-      {k:"Ø Strom Fernwärme / Tag", v: fmt2(avgElecPump)},
+      {k:`Wärme ${escapeHtml(loadSettings().houseName)} (kWh)`, v: fmt1(heatHouse)},
+      {k:`Wärme ${escapeHtml(loadSettings().rosiName)} (kWh)`, v: fmt1(heatRosi)},
+      {k:"Strom Heizung (kWh)", v: fmt1(elecHeat)},
+      {k:"Strom Fernwärmeleitung (kWh)", v: fmt1(elecPump)},
       {k:"Vollaststunden (h)", v: fmt1(fullHours)},
-      {k:"Ø Vollaststunden / Tag", v: fmt1(avgHours)},
       {k:"Pufferladungen", v: fmt0(bufferCnt)},
-      {k:"Ø Pufferladungen / Tag", v: fmt1(avgBuffer)},
       {k:"Hackschnitzel Verbrauch (kg)", v: fmt1(chipsKg)},
-      {k:"Ø Hackschnitzel / Tag", v: fmt1(avgChips)},
-      {k:"Peak Wärme/Tag (kWh)", v: fmt1(peakHeatTotal)},
-      {k:"Peak Hacks/Tag (kg)", v: fmt1(peakChips)},
-      {k:"Peak Vollast/Tag (h)", v: fmt1(peakHours)},
-    ];
-    $("kpis").innerHTML = kpis.map(x => `
-      <div class="box"><div class="v">${x.v}</div><div class="k">${x.k}</div></div>
-    `).join("");
+      {k:"Tage", v: String(nDays)}
+    ].map(x=>`<div class="kpi"><div class="k">${x.k}</div><div class="v">${x.v}</div></div>`).join("");
 
-    // chart (Tageswerte)
-    const metric = $("anMetric")?.value || "heat_breakdown";
+    // chart labels: 1..n
+    const labels = Array.from({length:nDays}, (_,i)=>String(i+1));
+    let datasets = [];
 
-    const daysInMonth = new Date(start.getFullYear(), start.getMonth()+1, 0).getDate();
-    const labels = Array.from({length: daysInMonth}, (_,i)=> String(i+1));
+    const metricLabel = {
+      heat_breakdown: "Wärme (kWh)",
+      heat_total_kwh: "Wärme gesamt (kWh)",
+      heat_rosi_kwh:  "Wärme Gebäude 2 (kWh)",
+      elec_heating_kwh:"Strom Heizung (kWh)",
+      elec_pump_kwh:  "Strom Fernwärmeleitung (kWh)",
+      full_load_minutes:"Vollaststunden (h)",
+      buffer_charges: "Pufferladungen",
+      chips_kg_since_ash:"Hackschnitzel Verbrauch (kg)"
+    };
 
-    function seriesForMetric(){
-      switch(metric){
-        case "heat_breakdown":
-          return {
-            datasets: [
-              { label: `Wärme Gesamt (kWh)`, data: dailyHeatTotal.map(v=>Number((+(v||0)).toFixed(2))) },
-              { label: `Wärme ${s.houseName} (kWh)`, data: dailyHeatHouse.map(v=>Number((+(v||0)).toFixed(2))) },
-              { label: `Wärme ${s.rosiName} (kWh)`, data: dailyHeatRosi.map(v=>Number((+(v||0)).toFixed(2))) },
-            ]
-          };
-        case "heat_total_kwh":
-          return { datasets: [{ label: "Wärme gesamt (kWh)", data: dailyHeatTotal.map(v=>Number((+(v||0)).toFixed(2))) }] };
-        case "heat_rosi_kwh":
-          return { datasets: [{ label: `Wärme ${s.rosiName} (kWh)`, data: dailyHeatRosi.map(v=>Number((+(v||0)).toFixed(2))) }] };
-        case "elec_heating_kwh":
-          return { datasets: [{ label: "Strom Heizung (kWh)", data: dailyElecHeat.map(v=>Number((+(v||0)).toFixed(2))) }] };
-        case "elec_pump_kwh":
-          return { datasets: [{ label: "Strom Fernwärmeleitung (kWh)", data: dailyElecPump.map(v=>Number((+(v||0)).toFixed(2))) }] };
-        case "full_load_minutes":
-          return { datasets: [{ label: "Vollast (h)", data: dailyFullHours.map(v=>Number((+(v||0)).toFixed(2))) }] };
-        case "buffer_charges":
-          return { datasets: [{ label: "Pufferladungen", data: distributeDaily(readings, monthStr, "buffer_charges").map(v=>Number((+(v||0)).toFixed(0))) }] };
-        case "chips_kg":
-          return { datasets: [{ label: "Hackschnitzel (kg)", data: distributeDaily(readings, monthStr, "chips_kg").map(v=>Number((+(v||0)).toFixed(2))) }] };
-        default:
-          return { datasets: [{ label: metric, data: distributeDaily(readings, monthStr, metric).map(v=>Number((+(v||0)).toFixed(2))) }] };
-      }
+    if(metric === "heat_breakdown"){
+      datasets = [
+        { label:`Wärme Gesamt (kWh) – ${y}`, data: dailyHeatTotal.map(v=>Number((+v||0).toFixed(2))) },
+        { label:`Wärme ${escapeHtml(loadSettings().houseName)} (kWh) – ${y}`, data: dailyHeatHouse.map(v=>Number((+v||0).toFixed(2))) },
+        { label:`Wärme ${escapeHtml(loadSettings().rosiName)} (kWh) – ${y}`, data: dailyHeatRosi.map(v=>Number((+v||0).toFixed(2))) }
+      ];
+    }else{
+      const seriesByMetric = {
+        heat_total_kwh: dailyHeatTotal,
+        heat_rosi_kwh:  dailyHeatRosi,
+        elec_heating_kwh: dailyElecHeat,
+        elec_pump_kwh:  dailyElecPump,
+        full_load_minutes: dailyFullHours,
+        buffer_charges: dailyBuffer,
+        chips_kg_since_ash: dailyChipsKg
+      };
+      const series = seriesByMetric[metric] || dailyHeatTotal;
+      datasets = [{ label:`${metricLabel[metric] || "Kennzahl"} – ${y}`, data: series.map(v=>Number((+v||0).toFixed(2))) }];
     }
 
-    const {datasets} = seriesForMetric();
-
-    // Chart.js
-    const ctx = $("chartDaily");
-    if(!ctx){
-      $("statusMonth").textContent = "Chart-Canvas fehlt (chartDaily).";
-      return;
-    }
-    if(dailyChart){ try{ dailyChart.destroy(); }catch(_){} dailyChart=null; }
-
-    dailyChart = new Chart(ctx, {
-      type: "line",
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: true } },
-        scales: { y: { beginAtZero: true } }
+    // render chart
+    if(window.monthChart) window.monthChart.destroy();
+    window.monthChart = new Chart($("chartDaily"), {
+      type:"bar",
+      data:{ labels, datasets },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        scales:{
+          x:{ ticks:{ color:"#e7eefc" }, grid:{ color:"rgba(255,255,255,.08)" } },
+          y:{ ticks:{ color:"#e7eefc" }, grid:{ color:"rgba(255,255,255,.08)" } }
+        },
+        plugins:{ legend:{ labels:{ color:"#e7eefc" } } }
       }
     });
 
-    $("statusMonth").textContent = "";
+    // status
+    $("statusMonth").innerHTML = statusSummary(readings);
+    const warn = $("monthWarn");
+    if(warn){ warn.classList.add("hidden"); warn.innerHTML=""; }
   }
 
   // ---------- Comparison (metric selectable) ----------
@@ -818,7 +787,7 @@ const dailyElecHeat  = distributeDaily(readings, monthStr, "elec_heating_kwh");
       const extra = document.createElement("div");
       extra.className = "muted";
       extra.style.marginTop = "4px";
-      extra.innerHTML = `Wärme ${escapeHtml(s.rosiName)}: ${heatRosi} · Strom Heizung: ${elecHeat} · Hackschnitzel: ${chips} kg`;
+      extra.innerHTML = `Wärme ${escapeHtml(s.rosiName)}: ${heatRosi} · Strom Heizung: ${elecHeat} · Hackschnitzel: ${chips}`;
       left.appendChild(extra);
 
       const right = document.createElement("div");
@@ -1331,28 +1300,5 @@ async function init(){
     $("heat_total_kwh")?.addEventListener("input", updateDerivedHeat);
     $("heat_rosi_kwh")?.addEventListener("input", updateDerivedHeat);
 
-function fatalError(err){
-  try{ console.error(err); }catch(_){ }
-  try{
-    const sb = document.getElementById("syncBadge");
-    if(sb){ sb.textContent = "error"; sb.title = String(err && err.message ? err.message : err); }
-    const vb = document.getElementById("verBadge");
-    if(vb && vb.textContent === "v?"){ vb.textContent = "v3.2.7"; }
-  }catch(_){ }
-  try{
-    // show a small, non-blocking hint on the login tab
-    const login = document.querySelector('section[data-tab="login"]');
-    if(login && !login.querySelector(".fatal-hint")){
-      const d=document.createElement("div");
-      d.className="fatal-hint";
-      d.style.cssText="margin-top:10px;color:#ffb4b4;font-size:12px;";
-      d.textContent="Fehler beim Laden der App. Bitte Seite neu laden oder Update/Cache reset verwenden. (Details in der Browser-Konsole)";
-      login.appendChild(d);
-    }
-  }catch(_){ }
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  Promise.resolve(init()).catch(fatalError);
-});
+document.addEventListener("DOMContentLoaded", init);
 })();
