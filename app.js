@@ -1013,54 +1013,69 @@ async function compareYears(yearA, yearB){
   }
 
 // ---------- Downloads (JSON/CSV) ----------
-function downloadTextFile(filename, text, mime="text/plain"){
-  const blob = new Blob([text], {type:mime});
+function downloadTextFile(filename, text, mime = "text/plain") {
+  const blob = new Blob([text], { type: mime });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-function toCSV(rows){
-  if(!rows || !rows.length) return "";
-  const keys = Array.from(rows.reduce((set,r)=>{
-    Object.keys(r||{}).forEach(k=>set.add(k));
-    return set;
-  }, new Set()));
-  const esc = (v)=>{
-    if(v===null || v===undefined) return "";
-    if(typeof v === "object") v = JSON.stringify(v);
+function toCSV(rows) {
+  if (!rows || !rows.length) return "";
+
+  const keys = Array.from(
+    rows.reduce((set, r) => {
+      Object.keys(r || {}).forEach((k) => set.add(k));
+      return set;
+    }, new Set())
+  );
+
+  const esc = (v) => {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "object") v = JSON.stringify(v);
     const s = String(v);
-    if(/[",
-;]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+
+    // WICHTIG: Regex darf keine echten Zeilenumbrüche enthalten
+    // Wir checken: Anführungszeichen, Zeilenumbruch, Semikolon (Excel DE)
+    if (/[\"\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
     return s;
   };
+
   const sep = ";"; // Excel (DE) friendly
   const head = keys.map(esc).join(sep);
-  const lines = rows.map(r => keys.map(k=>esc(r[k])).join(sep));
-  return [head, ...lines].join("
-");
+  const lines = rows.map((r) => keys.map((k) => esc(r[k])).join(sep));
+
+  // WICHTIG: Muss "\n" sein, kein echter Zeilenumbruch im String
+  return [head, ...lines].join("\n");
 }
 
-function downloadJSON(filename, obj){
+function downloadJSON(filename, obj) {
   downloadTextFile(filename, JSON.stringify(obj, null, 2), "application/json");
 }
 
-function downloadCSV(filename, rows){
+function downloadCSV(filename, rows) {
   downloadTextFile(filename, toCSV(rows), "text/csv;charset=utf-8");
 }
 
-async function exportCsv(){
+async function exportCsv() {
   const uid = userId();
-  const tables = ["daily_readings","ash_events","chipping_events","maintenance_events","heat_price_heating_year"];
-  for(const t of tables){
+  const tables = [
+    "daily_readings",
+    "ash_events",
+    "chipping_events",
+    "maintenance_events",
+    "heat_price_heating_year",
+  ];
+
+  for (const t of tables) {
     const { data, error } = await supabase.from(t).select("*").eq("user_id", uid);
-    if(error) throw error;
+    if (error) throw error;
     const rows = data || [];
-    const fn = `heizlog-${t}-${new Date().toISOString().slice(0,10)}.csv`;
+    const fn = `heizlog-${t}-${new Date().toISOString().slice(0, 10)}.csv`;
     downloadCSV(fn, rows);
   }
 }
