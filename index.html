@@ -608,8 +608,8 @@
 
     <div class="hr"></div>
     <button class="secondary" id="btnExportJson">JSON Backup exportieren</button>
-    <button class="secondary" id="btnExportMaintCsv" style="margin-top:8px;">Wartungen CSV exportieren</button>
-    <button class="secondary" id="btnExportCsv" style="margin-top:8px;">CSV Backup exportieren (Excel)</button>
+    <button class="secondary" id="btnExportCsv" style="margin-top:8px;">Backup (Excel/CSV) exportieren</button>
+    <div class="muted" style="margin-top:6px;">CSV ist Excel-freundlich (Trennzeichen ;). Pro Tabelle wird eine Datei heruntergeladen.</div>
   
     <div class="hr"></div>
     <h3 style="margin:0 0 8px 0; font-size:14px;">Wartung</h3>
@@ -621,13 +621,11 @@
       <div>
         <label>Notiz (optional)</label>
         <input id="maintNote" placeholder="z.B. Reinigung, Kontrolle, Teile gewechselt ..." />
+        <div class="muted" style="margin-top:6px;"><label style="display:flex; gap:8px; align-items:center; margin:0;"><input type="checkbox" id="maintDownload" style="width:auto;" /> Download nach Speichern (JSON+CSV)</label></div>
       </div>
     </div>
     <div class="row" style="margin-top:10px;">
       <button class="secondary" id="btnAddMaint">Wartung speichern</button>
-      <label style="display:flex;gap:8px;align-items:center; margin:0 0 0 10px; flex:0 0 auto; white-space:nowrap; color:var(--muted); font-size:13px;">
-        <input type="checkbox" id="maintAutoDownload" style="width:auto; margin:0;" /> Download (JSON+CSV)
-      </label>
       <div class="muted" id="maintMsg" style="padding-top:10px;"></div>
     </div>
     <div class="muted" style="margin-top:6px;">Hinweis: Wartung ist ein Ereignis (Datum kann vor dem 04.09. liegen). Heizjahr beginnt immer fix am 04.09.</div>

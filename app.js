@@ -3,27 +3,18 @@
 
 (() => {
   const cfg = window.HEIZLOG_CONFIG;
-  const APP_VERSION = (cfg && cfg.appVersion) ? String(cfg.appVersion) : "3.2.2";
-  const BUILD_DATE = (cfg && cfg.buildDate) ? String(cfg.buildDate) : "2026-01-13";
+    const APP_VERSION = (cfg && cfg.appVersion) ? String(cfg.appVersion) : "3.3.3";
+    const BUILD_DATE = (cfg && cfg.buildDate) ? String(cfg.buildDate) : "2026-01-14";
   const CHANGELOG = [
   {
-    "v": "3.3.2",
+    "v": "3.3.3",
     "date": "2026-01-14",
     "items": [
-      "Fix: Export (CSV) Regex-Fehler behoben (App startete sonst nicht)",
-      "Neu: Wartungen als CSV exportieren (Download im Browser)"
+      "Backup-Export Excel-freundlicher (CSV mit ; und verständlichen Dateinamen)",
+      "Wartungen: Liste + Download (JSON/CSV/Snapshot) + Löschen"
     ]
   },
   {
-  "v": "3.3.1",
-  "date": "2026-01-14",
-  "items": [
-    "Wartung: Liste + Download (JSON/CSV) in der App",
-    "Backup-Export zusätzlich als CSV (Excel)",
-    "Service Worker/Cache-Versionierung aktualisiert"
-  ]
-},
-{
     "v": "3.3.0",
     "date": "2026-01-13",
     "items": [
@@ -336,6 +327,16 @@ if($("costHint")) $("costHint").textContent = `Wärme ${s.houseName} = Wärme Ge
     if(error) throw error;
     return data || [];
   }
+
+  async function deleteMaintenanceEvent(id){
+    const { error } = await supabase
+      .from("maintenance_events")
+      .delete()
+      .eq("user_id", userId())
+      .eq("id", id);
+    if(error) throw error;
+  }
+
 
 async function fetchChippingRange(startISO, endISO){
     const { data, error } = await supabase
@@ -1012,74 +1013,6 @@ async function compareYears(yearA, yearB){
     }
   }
 
-// ---------- Downloads (JSON/CSV) ----------
-function downloadTextFile(filename, text, mime = "text/plain") {
-  const blob = new Blob([text], { type: mime });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-
-function toCSV(rows) {
-  if (!rows || !rows.length) return "";
-
-  const keys = Array.from(
-    rows.reduce((set, r) => {
-      Object.keys(r || {}).forEach((k) => set.add(k));
-      return set;
-    }, new Set())
-  );
-
-  const esc = (v) => {
-    if (v === null || v === undefined) return "";
-    if (typeof v === "object") v = JSON.stringify(v);
-    const s = String(v);
-
-    // WICHTIG: Regex darf keine echten Zeilenumbrüche enthalten
-    // Wir checken: Anführungszeichen, Zeilenumbruch, Semikolon (Excel DE)
-    if (/[\"\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
-  };
-
-  const sep = ";"; // Excel (DE) friendly
-  const head = keys.map(esc).join(sep);
-  const lines = rows.map((r) => keys.map((k) => esc(r[k])).join(sep));
-
-  // WICHTIG: Muss "\n" sein, kein echter Zeilenumbruch im String
-  return [head, ...lines].join("\n");
-}
-
-function downloadJSON(filename, obj) {
-  downloadTextFile(filename, JSON.stringify(obj, null, 2), "application/json");
-}
-
-function downloadCSV(filename, rows) {
-  downloadTextFile(filename, toCSV(rows), "text/csv;charset=utf-8");
-}
-
-async function exportCsv() {
-  const uid = userId();
-  const tables = [
-    "daily_readings",
-    "ash_events",
-    "chipping_events",
-    "maintenance_events",
-    "heat_price_heating_year",
-  ];
-
-  for (const t of tables) {
-    const { data, error } = await supabase.from(t).select("*").eq("user_id", uid);
-    if (error) throw error;
-    const rows = data || [];
-    const fn = `heizlog-${t}-${new Date().toISOString().slice(0, 10)}.csv`;
-    downloadCSV(fn, rows);
-  }
-}
-
   async function exportJson(){
     const uid = userId();
     const tables = ["daily_readings","ash_events","chipping_events","maintenance_events","heat_price_heating_year"];
@@ -1098,14 +1031,154 @@ async function exportCsv() {
     a.remove();
   }
 
+  // ---------- Downloads (JSON/CSV) ----------
 
-  async function exportMaintenanceCsv(){
-    const rows = await fetchMaintenanceEvents();
-    if(!rows.length) throw new Error("Keine Wartungen vorhanden.");
-    const csv = toCSV(rows);
-    const fn = "maintenance-events-" + new Date().toISOString().slice(0,10) + ".csv";
-    downloadTextFile(fn, csv, "text/csv;charset=utf-8");
+const EXPORT_SCHEMA = {
+  daily_readings: [
+    {key:"day", label:"Datum"},
+    {key:"time_hhmm", label:"Uhrzeit"},
+    {key:"temp_c", label:"Temperatur (°C)"},
+    {key:"heat_total_kwh", label:"Wärme gesamt (kWh, Zähler)"},
+    {key:"heat_rosi_kwh", label:"Wärme Gebäude 2 (kWh, Zähler)"},
+    {key:"elec_heating_kwh", label:"Strom Heizung (kWh, Zähler)"},
+    {key:"elec_pump_kwh", label:"Strom Fernwärmeleitung (kWh, Zähler)"},
+    {key:"full_load_minutes", label:"Vollast (Minuten)"},
+    {key:"buffer_charges", label:"Pufferladungen (Zähler)"},
+    {key:"chips_kg_since_ash", label:"Hackschnitzel seit letzter Asche (kg)"},
+    {key:"hk_house", label:"Heizkörper Wohnhaus an"},
+    {key:"hk_rosi", label:"Heizkörper Gebäude 2 an"},
+    {key:"fbh_rosi", label:"FBH Gebäude 2 an"},
+    {key:"note", label:"Notiz"},
+    {key:"created_at", label:"Erstellt am"},
+    {key:"user_id", label:"User-ID"},
+    {key:"id", label:"ID"},
+  ],
+  ash_events: [
+    {key:"ts", label:"Zeitpunkt"},
+    {key:"note", label:"Notiz"},
+    {key:"created_at", label:"Erstellt am"},
+    {key:"user_id", label:"User-ID"},
+    {key:"id", label:"ID"},
+  ],
+  chipping_events: [
+    {key:"ts", label:"Zeitpunkt"},
+    {key:"ster_rm", label:"Menge (Ster/RM)"},
+    {key:"cost_eur", label:"Kosten (€)"},
+    {key:"who", label:"Wer"},
+    {key:"note", label:"Notiz"},
+    {key:"created_at", label:"Erstellt am"},
+    {key:"user_id", label:"User-ID"},
+    {key:"id", label:"ID"},
+  ],
+  maintenance_events: [
+    {key:"day", label:"Wartungsdatum"},
+    {key:"note", label:"Notiz"},
+    {key:"ts", label:"Zeitpunkt gespeichert"},
+    {key:"snapshot", label:"Snapshot (JSON)"},
+    {key:"created_at", label:"Erstellt am"},
+    {key:"user_id", label:"User-ID"},
+    {key:"id", label:"ID"},
+  ],
+  heat_price_heating_year: [
+    {key:"heating_year_start", label:"Heizjahr-Start (Datum)"},
+    {key:"ct_per_kwh", label:"Preis (ct/kWh)"},
+    {key:"created_at", label:"Erstellt am"},
+    {key:"user_id", label:"User-ID"},
+    {key:"id", label:"ID"},
+  ],
+};
+
+function exportSchemaRows(){
+  const out = [];
+  for(const [table, cols] of Object.entries(EXPORT_SCHEMA)){
+    const dyn = exportColumnsFor(table) || cols;
+    for(const c of dyn){
+      out.push({Tabelle: table, Spalte: c.key, Name: c.label});
+    }
   }
+  return out;
+}
+
+
+function exportColumnsFor(table){
+  const s = loadSettings();
+  const cols = EXPORT_SCHEMA[table] || null;
+  if(!cols) return null;
+  return cols.map(c => ({
+    key: c.key,
+    label: String(c.label || c.key)
+      .replaceAll("Wohnhaus", s.houseName || "Wohnhaus")
+      .replaceAll("Gebäude 2", s.rosiName || "Gebäude 2")
+  }));
+}
+
+  function downloadTextFile(filename, text, mime="text/plain"){
+    const blob = new Blob([text], {type:mime});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+  }
+
+  function toCSV(rows, {separator=";"} = {}){
+    if(!rows || !rows.length) return "";
+    const keys = Array.from(rows.reduce((set,r)=>{
+      Object.keys(r||{}).forEach(k=>set.add(k));
+      return set;
+    }, new Set()));
+    const esc = (v)=>{
+      if(v===null || v===undefined) return "";
+      if(typeof v === "object") v = JSON.stringify(v);
+      const s = String(v);
+      if(new RegExp(`[\"\\n\\r${separator}]`).test(s)) return '"' + s.replace(/"/g,'""') + '"';
+      return s;
+    };
+    const head = keys.map(esc).join(separator);
+    const lines = rows.map(r => keys.map(k=>esc(r[k])).join(separator));
+    return [head, ...lines].join("\n");
+  }
+
+  function downloadJSON(filename, obj){
+    downloadTextFile(filename, JSON.stringify(obj, null, 2), "application/json");
+  }
+
+  function downloadCSV(filename, rows, columns){
+    // Excel (DE) friendly: Separator ';'
+    const csv = toCSV(rows, {separator:";"});
+    downloadTextFile(filename, csv, "text/csv;charset=utf-8");
+  }
+
+  async function exportCsvBackup(){
+  const uid = userId();
+  const date = new Date().toISOString().slice(0,10);
+
+  // 1) Spaltenübersicht (hilft in Excel zu verstehen was was ist)
+  const schemaRows = exportSchemaRows();
+  downloadCSV(`heizlog-${date}-Spaltenuebersicht.csv`, schemaRows);
+
+  // 2) Tabellen
+  const tables = [
+    {name:"daily_readings", label:"Tageswerte"},
+    {name:"ash_events", label:"Asche-Events"},
+    {name:"chipping_events", label:"Haecksel-Events"},
+    {name:"maintenance_events", label:"Wartungen"},
+    {name:"heat_price_heating_year", label:"Preise"},
+  ];
+
+  for(const t of tables){
+    const { data, error } = await supabase.from(t.name).select("*").eq("user_id", uid);
+    if(error) throw error;
+    const rows = data || [];
+    const cols = exportColumnsFor(t.name);
+    const fn = `heizlog-${date}-${t.label}.csv`;
+    downloadCSV(fn, rows, cols);
+  }
+}
+
+
 
   // ---------- Wiring ----------
   // ---------- Changelog ----------
@@ -1372,82 +1445,100 @@ async function exportCsv() {
   }
 
   async function renderMaintenanceList(){
-  const msg = $("maintMsg");
-  const list = $("maintList");
-  if(list) list.innerHTML = "";
-  try{
-    const events = await fetchMaintenanceEvents();
-    if(!list) return;
-    if(!events.length){
-      list.innerHTML = `<div class="muted">Noch keine Wartungen gespeichert.</div>`;
-      return;
-    }
-    for(const ev of events){
-      const it = document.createElement("div");
-      it.className = "item";
+    const msg = $("maintMsg");
+    const list = $("maintList");
+    if(list) list.innerHTML = "";
+    try{
+      const events = await fetchMaintenanceEvents();
 
-      const left = document.createElement("div");
-      left.innerHTML = `<strong>${escapeHtml(ev.day || "")}</strong><small>${escapeHtml(ev.note || "—")}</small>`;
+      if(!list){
+        // UI not available (older index.html)
+        return;
+      }
 
-      const right = document.createElement("div");
-      right.style.display="flex";
-      right.style.gap="8px";
-      right.style.alignItems="center";
+      if(!events.length){
+        list.innerHTML = `<div class="muted">Noch keine Wartungen gespeichert.</div>`;
+        return;
+      }
 
-      const btnJ = document.createElement("button");
-      btnJ.className="secondary";
-      btnJ.style.width="auto";
-      btnJ.textContent="JSON";
-      btnJ.addEventListener("click",(e)=>{
-        e.stopPropagation();
-        downloadJSON(`wartung-${ev.day || "unknown"}.json`, ev);
-      });
+      for(const ev of events){
+        const it = document.createElement("div");
+        it.className = "item";
 
-      const btnC = document.createElement("button");
-      btnC.className="secondary";
-      btnC.style.width="auto";
-      btnC.textContent="CSV";
-      btnC.addEventListener("click",(e)=>{
-        e.stopPropagation();
-        downloadCSV(`wartung-${ev.day || "unknown"}.csv`, [ev]);
-      });
+        const left = document.createElement("div");
+        left.innerHTML = `<strong>${escapeHtml(ev.day || "—")}</strong>` + (ev.note ? `<small>${escapeHtml(ev.note)}</small>` : `<small class="muted">—</small>`);
 
-      const btnS = document.createElement("button");
-      btnS.className="secondary";
-      btnS.style.width="auto";
-      btnS.textContent="Snapshot";
-      btnS.addEventListener("click",(e)=>{
-        e.stopPropagation();
-        const pre = it.querySelector("pre");
-        if(pre) pre.classList.toggle("hidden");
-      });
+        const right = document.createElement("div");
+        right.style.display="flex";
+        right.style.gap="8px";
+        right.style.alignItems="center";
+        right.style.flexWrap="wrap";
+        right.style.justifyContent="flex-end";
 
-      right.appendChild(btnJ);
-      right.appendChild(btnC);
-      right.appendChild(btnS);
+        const btnJson = document.createElement("button");
+        btnJson.className="secondary";
+        btnJson.style.width="auto";
+        btnJson.textContent="JSON";
+        btnJson.addEventListener("click", ()=>{
+          const fn = `Wartung_${ev.day || "unknown"}.json`;
+          downloadJSON(fn, ev);
+        });
 
-      it.appendChild(left);
-      it.appendChild(right);
+        const btnCsv = document.createElement("button");
+        btnCsv.className="secondary";
+        btnCsv.style.width="auto";
+        btnCsv.textContent="CSV";
+        btnCsv.addEventListener("click", ()=>{
+          const fn = `Wartung_${ev.day || "unknown"}.csv`;
+          downloadCSV(fn, [ev], exportColumnsFor("maintenance_events"));
+        });
 
-      const pre = document.createElement("pre");
-      pre.className = "hidden";
-      pre.style.margin="10px 0 0 0";
-      pre.style.whiteSpace="pre-wrap";
-      pre.style.wordBreak="break-word";
-      pre.textContent = ev.snapshot ? JSON.stringify(ev.snapshot, null, 2) : "(kein Snapshot)";
-      it.appendChild(pre);
+        const btnSnap = document.createElement("button");
+        btnSnap.className="secondary";
+        btnSnap.style.width="auto";
+        btnSnap.textContent="Snapshot";
+        btnSnap.title="Tages-Snapshot, der beim Speichern mitgesichert wurde";
+        btnSnap.addEventListener("click", ()=>{
+          const fn = `Wartung_Snapshot_${ev.day || "unknown"}.json`;
+          downloadJSON(fn, ev.snapshot || null);
+        });
 
-      list.appendChild(it);
-    }
-  }catch(e){
-    if(msg){
-      msg.textContent = "Hinweis: Für Wartungen brauchst du eine Supabase-Tabelle 'maintenance_events' (siehe README).";
-    }
-    if(list){
-      list.innerHTML = `<div class="muted">Wartungs-Tabelle nicht verfügbar.</div>`;
+        const btnDel = document.createElement("button");
+        btnDel.className="danger";
+        btnDel.style.width="auto";
+        btnDel.textContent="🗑";
+        btnDel.title="Wartung löschen";
+        btnDel.addEventListener("click", async ()=>{
+          if(!confirm(`Wartung vom ${ev.day} löschen?`)) return;
+          try{
+            await deleteMaintenanceEvent(ev.id);
+            await renderMaintenanceList();
+          }catch(e){
+            alert(e.message || String(e));
+          }
+        });
+
+        right.appendChild(btnJson);
+        right.appendChild(btnCsv);
+        right.appendChild(btnSnap);
+        right.appendChild(btnDel);
+
+        it.appendChild(left);
+        it.appendChild(right);
+        list.appendChild(it);
+      }
+      if(msg) msg.textContent = ""; // clear hint if ok
+    }catch(e){
+      // If table doesn't exist, give a helpful hint.
+      if(msg){
+        msg.textContent = "Hinweis: Für Wartungen brauchst du eine Supabase-Tabelle 'maintenance_events' (siehe README).";
+      }
+      if(list){
+        list.innerHTML = `<div class="muted">Wartungs-Tabelle fehlt oder ist nicht erreichbar.</div>`;
+      }
     }
   }
-}
+
 
 async function init(){
     applySettings();
@@ -1542,13 +1633,16 @@ async function init(){
         const snap = await fetchDailyByDay(d);
         await addMaintenanceEvent({ day:d, note, snapshot: snap });
         $("maintMsg").textContent = "Wartung gespeichert.";
-        // Optional: Download (JSON+CSV)
-        const auto = $("maintAutoDownload") ? $("maintAutoDownload").checked : false;
-        if(auto){
-          const row = { user_id: userId(), day:d, ts: new Date().toISOString(), note: note || null, snapshot: snap || null };
-          downloadJSON(`wartung-${d}.json`, row);
-          downloadCSV(`wartung-${d}.csv`, [row]);
+
+        // optional: download immediately
+        const doDl = $("maintDownload")?.checked;
+        if(doDl){
+          const row = { day:d, note: note||null, snapshot: snap||null, ts: new Date().toISOString() };
+          downloadJSON(`Wartung_${d}.json`, row);
+          downloadCSV(`Wartung_${d}.csv`, [row], exportColumnsFor("maintenance_events"));
+          if(snap) downloadJSON(`Wartung_Snapshot_${d}.json`, snap);
         }
+
         $("maintNote").value = "";
         await renderMaintenanceList();
       }catch(e){
@@ -1635,12 +1729,7 @@ async function init(){
     });
 
     $("btnExportCsv")?.addEventListener("click", async () => {
-      try{ await exportCsv(); }catch(e){ alert(e.message || e); }
-    });
-
-    $("btnExportMaintCsv")?.addEventListener("click", async () => {
-      try{ await exportMaintenanceCsv(); }
-      catch(e){ alert(e.message || e); }
+      try{ await exportCsvBackup(); }catch(e){ alert(e.message || e); }
     });
 
     supabase.auth.onAuthStateChange((_event, _session) => {
@@ -1658,3 +1747,11 @@ async function init(){
 
 document.addEventListener("DOMContentLoaded", init);
 })();
+function toCSV(rows, columns){
+  if(!rows || !rows.length) return "";
+  const cols = Array.isArray(columns) && columns.length ? columns : null;
+  const keys = cols ? cols.map(c=>c.key) : Array.from(rows.reduce((set,r)=>{
+    Object.keys(r||{}).forEach(k=>set.add(k));
+    return set;
+  }, new Set()));
+
