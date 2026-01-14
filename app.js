@@ -7,6 +7,14 @@
   const BUILD_DATE = (cfg && cfg.buildDate) ? String(cfg.buildDate) : "2026-01-13";
   const CHANGELOG = [
   {
+    "v": "3.3.2",
+    "date": "2026-01-14",
+    "items": [
+      "Fix: Export (CSV) Regex-Fehler behoben (App startete sonst nicht)",
+      "Neu: Wartungen als CSV exportieren (Download im Browser)"
+    ]
+  },
+  {
   "v": "3.3.1",
   "date": "2026-01-14",
   "items": [
@@ -1075,6 +1083,15 @@ async function exportCsv(){
     a.remove();
   }
 
+
+  async function exportMaintenanceCsv(){
+    const rows = await fetchMaintenanceEvents();
+    if(!rows.length) throw new Error("Keine Wartungen vorhanden.");
+    const csv = toCSV(rows);
+    const fn = "maintenance-events-" + new Date().toISOString().slice(0,10) + ".csv";
+    downloadTextFile(fn, csv, "text/csv;charset=utf-8");
+  }
+
   // ---------- Wiring ----------
   // ---------- Changelog ----------
   function renderChangelog(){
@@ -1604,6 +1621,11 @@ async function init(){
 
     $("btnExportCsv")?.addEventListener("click", async () => {
       try{ await exportCsv(); }catch(e){ alert(e.message || e); }
+    });
+
+    $("btnExportMaintCsv")?.addEventListener("click", async () => {
+      try{ await exportMaintenanceCsv(); }
+      catch(e){ alert(e.message || e); }
     });
 
     supabase.auth.onAuthStateChange((_event, _session) => {

@@ -4,6 +4,6 @@ window.HEIZLOG_CONFIG = {
   supabaseKey: "sb_publishable_oxC4Y8rwafneNWLv4QSqtA_nWkC57oR",
   heatingYearStart: "09-04", // MM-DD (04.09.)
   defaultTime: "18:00",
-  appVersion: "3.3.1",
+  appVersion: "3.3.2",
   buildDate: "2026-01-14",
 };
