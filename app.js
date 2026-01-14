@@ -7,6 +7,15 @@
   const BUILD_DATE = (cfg && cfg.buildDate) ? String(cfg.buildDate) : "2026-01-13";
   const CHANGELOG = [
   {
+  "v": "3.3.1",
+  "date": "2026-01-14",
+  "items": [
+    "Wartung: Liste + Download (JSON/CSV) in der App",
+    "Backup-Export zusätzlich als CSV (Excel)",
+    "Service Worker/Cache-Versionierung aktualisiert"
+  ]
+},
+{
     "v": "3.3.0",
     "date": "2026-01-13",
     "items": [
@@ -995,6 +1004,59 @@ async function compareYears(yearA, yearB){
     }
   }
 
+// ---------- Downloads (JSON/CSV) ----------
+function downloadTextFile(filename, text, mime="text/plain"){
+  const blob = new Blob([text], {type:mime});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+
+function toCSV(rows){
+  if(!rows || !rows.length) return "";
+  const keys = Array.from(rows.reduce((set,r)=>{
+    Object.keys(r||{}).forEach(k=>set.add(k));
+    return set;
+  }, new Set()));
+  const esc = (v)=>{
+    if(v===null || v===undefined) return "";
+    if(typeof v === "object") v = JSON.stringify(v);
+    const s = String(v);
+    if(/[",
+;]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+    return s;
+  };
+  const sep = ";"; // Excel (DE) friendly
+  const head = keys.map(esc).join(sep);
+  const lines = rows.map(r => keys.map(k=>esc(r[k])).join(sep));
+  return [head, ...lines].join("
+");
+}
+
+function downloadJSON(filename, obj){
+  downloadTextFile(filename, JSON.stringify(obj, null, 2), "application/json");
+}
+
+function downloadCSV(filename, rows){
+  downloadTextFile(filename, toCSV(rows), "text/csv;charset=utf-8");
+}
+
+async function exportCsv(){
+  const uid = userId();
+  const tables = ["daily_readings","ash_events","chipping_events","maintenance_events","heat_price_heating_year"];
+  for(const t of tables){
+    const { data, error } = await supabase.from(t).select("*").eq("user_id", uid);
+    if(error) throw error;
+    const rows = data || [];
+    const fn = `heizlog-${t}-${new Date().toISOString().slice(0,10)}.csv`;
+    downloadCSV(fn, rows);
+  }
+}
+
   async function exportJson(){
     const uid = userId();
     const tables = ["daily_readings","ash_events","chipping_events","maintenance_events","heat_price_heating_year"];
@@ -1278,74 +1340,82 @@ async function compareYears(yearA, yearB){
   }
 
   async function renderMaintenanceList(){
-    const box = $("maintList");  // muss in index.html existieren
-    const msg = $("maintMsg");
+  const msg = $("maintMsg");
+  const list = $("maintList");
+  if(list) list.innerHTML = "";
+  try{
+    const events = await fetchMaintenanceEvents();
+    if(!list) return;
+    if(!events.length){
+      list.innerHTML = `<div class="muted">Noch keine Wartungen gespeichert.</div>`;
+      return;
+    }
+    for(const ev of events){
+      const it = document.createElement("div");
+      it.className = "item";
 
-    if(msg) msg.textContent = "";
-    if(!box) return; // falls index.html noch nicht aktualisiert ist
+      const left = document.createElement("div");
+      left.innerHTML = `<strong>${escapeHtml(ev.day || "")}</strong><small>${escapeHtml(ev.note || "—")}</small>`;
 
-    try{
-      const events = await fetchMaintenanceEvents();
+      const right = document.createElement("div");
+      right.style.display="flex";
+      right.style.gap="8px";
+      right.style.alignItems="center";
 
-      if(!events.length){
-        box.innerHTML = `<div class="muted">Noch keine Wartungen gespeichert.</div>`;
-        return;
-      }
+      const btnJ = document.createElement("button");
+      btnJ.className="secondary";
+      btnJ.style.width="auto";
+      btnJ.textContent="JSON";
+      btnJ.addEventListener("click",(e)=>{
+        e.stopPropagation();
+        downloadJSON(`wartung-${ev.day || "unknown"}.json`, ev);
+      });
 
-      const fmtDay = (iso) => {
-        try { return new Intl.DateTimeFormat("de-DE").format(new Date(iso + "T00:00:00")); }
-        catch { return iso; }
-      };
+      const btnC = document.createElement("button");
+      btnC.className="secondary";
+      btnC.style.width="auto";
+      btnC.textContent="CSV";
+      btnC.addEventListener("click",(e)=>{
+        e.stopPropagation();
+        downloadCSV(`wartung-${ev.day || "unknown"}.csv`, [ev]);
+      });
 
-      const fmtTs = (ts) => {
-        if(!ts) return "—";
-        try {
-          return new Intl.DateTimeFormat("de-DE", { dateStyle:"medium", timeStyle:"medium" }).format(new Date(ts));
-        } catch {
-          return ts;
-        }
-      };
+      const btnS = document.createElement("button");
+      btnS.className="secondary";
+      btnS.style.width="auto";
+      btnS.textContent="Snapshot";
+      btnS.addEventListener("click",(e)=>{
+        e.stopPropagation();
+        const pre = it.querySelector("pre");
+        if(pre) pre.classList.toggle("hidden");
+      });
 
-      box.innerHTML = events.map(ev => {
-        const note = ev.note ? escapeHtml(ev.note) : `<span class="muted">(keine Notiz)</span>`;
+      right.appendChild(btnJ);
+      right.appendChild(btnC);
+      right.appendChild(btnS);
 
-        const snapHtml = ev.snapshot
-          ? `<details style="margin-top:8px;">
-               <summary>Snapshot (gespeicherte Daten) anzeigen</summary>
-               <pre style="white-space:pre-wrap; margin:8px 0 0 0;">${escapeHtml(JSON.stringify(ev.snapshot, null, 2))}</pre>
-             </details>`
-          : `<div class="muted" style="margin-top:8px;">Snapshot: (kein Snapshot gespeichert)</div>`;
+      it.appendChild(left);
+      it.appendChild(right);
 
-        return `
-          <div style="padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:14px; margin:10px 0; background:rgba(255,255,255,.03);">
-            <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline;">
-              <div><strong>${escapeHtml(fmtDay(ev.day))}</strong></div>
-              <div class="muted">ID: ${escapeHtml(ev.id)}</div>
-            </div>
+      const pre = document.createElement("pre");
+      pre.className = "hidden";
+      pre.style.margin="10px 0 0 0";
+      pre.style.whiteSpace="pre-wrap";
+      pre.style.wordBreak="break-word";
+      pre.textContent = ev.snapshot ? JSON.stringify(ev.snapshot, null, 2) : "(kein Snapshot)";
+      it.appendChild(pre);
 
-            <div style="margin-top:6px;">${note}</div>
-
-            <div class="muted" style="margin-top:6px;">
-              gespeichert: ${escapeHtml(fmtTs(ev.ts))}
-            </div>
-
-            ${snapHtml}
-          </div>
-        `;
-      }).join("");
-
-    }catch(e){
-      if(msg) msg.textContent = e.message || String(e);
-      box.innerHTML = `<div class="muted">Wartungen konnten nicht geladen werden.</div>`;
+      list.appendChild(it);
+    }
+  }catch(e){
+    if(msg){
+      msg.textContent = "Hinweis: Für Wartungen brauchst du eine Supabase-Tabelle 'maintenance_events' (siehe README).";
+    }
+    if(list){
+      list.innerHTML = `<div class="muted">Wartungs-Tabelle nicht verfügbar.</div>`;
     }
   }
-    }catch(e){
-      // If table doesn't exist, give a helpful hint once.
-      if(msg){
-        msg.textContent = "Hinweis: Für Wartungen brauchst du eine Supabase-Tabelle 'maintenance_events' (siehe README).";
-      }
-    }
-  }
+}
 
 async function init(){
     applySettings();
@@ -1440,6 +1510,13 @@ async function init(){
         const snap = await fetchDailyByDay(d);
         await addMaintenanceEvent({ day:d, note, snapshot: snap });
         $("maintMsg").textContent = "Wartung gespeichert.";
+        // Optional: Download (JSON+CSV)
+        const auto = $("maintAutoDownload") ? $("maintAutoDownload").checked : false;
+        if(auto){
+          const row = { user_id: userId(), day:d, ts: new Date().toISOString(), note: note || null, snapshot: snap || null };
+          downloadJSON(`wartung-${d}.json`, row);
+          downloadCSV(`wartung-${d}.csv`, [row]);
+        }
         $("maintNote").value = "";
         await renderMaintenanceList();
       }catch(e){
@@ -1523,6 +1600,10 @@ async function init(){
 
     $("btnExportJson").addEventListener("click", async () => {
       try{ await exportJson(); }catch(e){ alert(e.message || e); }
+    });
+
+    $("btnExportCsv")?.addEventListener("click", async () => {
+      try{ await exportCsv(); }catch(e){ alert(e.message || e); }
     });
 
     supabase.auth.onAuthStateChange((_event, _session) => {

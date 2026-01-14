@@ -608,6 +608,7 @@
 
     <div class="hr"></div>
     <button class="secondary" id="btnExportJson">JSON Backup exportieren</button>
+    <button class="secondary" id="btnExportCsv" style="margin-top:8px;">CSV Backup exportieren (Excel)</button>
   
     <div class="hr"></div>
     <h3 style="margin:0 0 8px 0; font-size:14px;">Wartung</h3>
@@ -623,17 +624,18 @@
     </div>
     <div class="row" style="margin-top:10px;">
       <button class="secondary" id="btnAddMaint">Wartung speichern</button>
+      <label style="display:flex;gap:8px;align-items:center; margin:0 0 0 10px; flex:0 0 auto; white-space:nowrap; color:var(--muted); font-size:13px;">
+        <input type="checkbox" id="maintAutoDownload" style="width:auto; margin:0;" /> Download (JSON+CSV)
+      </label>
       <div class="muted" id="maintMsg" style="padding-top:10px;"></div>
     </div>
     <div class="muted" style="margin-top:6px;">Hinweis: Wartung ist ein Ereignis (Datum kann vor dem 04.09. liegen). Heizjahr beginnt immer fix am 04.09.</div>
 
-    
+    <div class="hr"></div>
+    <h3 style="margin:0 0 8px 0; font-size:14px;">Gespeicherte Wartungen</h3>
+    <div id="maintList" class="list" style="margin-top:10px;"></div>
 
     <div class="hr"></div>
-    <h4 style="margin:0 0 8px 0; font-size:13px;">Gespeicherte Wartungen</h4>
-    <div id="maintList" class="muted"></div>
-
-<div class="hr"></div>
     <h3 style="margin:0 0 8px 0; font-size:14px;">Changelog</h3>
     <div id="changelogBox" class="muted"></div>
 
