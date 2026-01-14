@@ -1022,165 +1022,187 @@ async function compareYears(yearA, yearB){
       if(error) throw error;
       out.tables[t] = data || [];
     }
-    const blob = new Blob([JSON.stringify(out, null, 2)], {type:"application/json"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `heizlog-backup-${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    downloadJSON(`heizlog-backup-${new Date().toISOString().slice(0,10)}.json`, out);
   }
 
-  // ---------- Downloads (JSON/CSV) ----------
+  // ---------- Downloads (JSON/CSV – Excel friendly) ----------
+function downloadTextFile(filename, text, mime="text/plain"){
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => { try { URL.revokeObjectURL(a.href); } catch(_){} }, 1500);
+}
 
-const EXPORT_SCHEMA = {
-  daily_readings: [
-    {key:"day", label:"Datum"},
-    {key:"time_hhmm", label:"Uhrzeit"},
-    {key:"temp_c", label:"Temperatur (°C)"},
-    {key:"heat_total_kwh", label:"Wärme gesamt (kWh, Zähler)"},
-    {key:"heat_rosi_kwh", label:"Wärme Gebäude 2 (kWh, Zähler)"},
-    {key:"elec_heating_kwh", label:"Strom Heizung (kWh, Zähler)"},
-    {key:"elec_pump_kwh", label:"Strom Fernwärmeleitung (kWh, Zähler)"},
-    {key:"full_load_minutes", label:"Vollast (Minuten)"},
-    {key:"buffer_charges", label:"Pufferladungen (Zähler)"},
-    {key:"chips_kg_since_ash", label:"Hackschnitzel seit letzter Asche (kg)"},
-    {key:"hk_house", label:"Heizkörper Wohnhaus an"},
-    {key:"hk_rosi", label:"Heizkörper Gebäude 2 an"},
-    {key:"fbh_rosi", label:"FBH Gebäude 2 an"},
-    {key:"note", label:"Notiz"},
-    {key:"created_at", label:"Erstellt am"},
-    {key:"user_id", label:"User-ID"},
-    {key:"id", label:"ID"},
-  ],
-  ash_events: [
-    {key:"ts", label:"Zeitpunkt"},
-    {key:"note", label:"Notiz"},
-    {key:"created_at", label:"Erstellt am"},
-    {key:"user_id", label:"User-ID"},
-    {key:"id", label:"ID"},
-  ],
-  chipping_events: [
-    {key:"ts", label:"Zeitpunkt"},
-    {key:"ster_rm", label:"Menge (Ster/RM)"},
-    {key:"cost_eur", label:"Kosten (€)"},
-    {key:"who", label:"Wer"},
-    {key:"note", label:"Notiz"},
-    {key:"created_at", label:"Erstellt am"},
-    {key:"user_id", label:"User-ID"},
-    {key:"id", label:"ID"},
-  ],
-  maintenance_events: [
-    {key:"day", label:"Wartungsdatum"},
-    {key:"note", label:"Notiz"},
-    {key:"ts", label:"Zeitpunkt gespeichert"},
-    {key:"snapshot", label:"Snapshot (JSON)"},
-    {key:"created_at", label:"Erstellt am"},
-    {key:"user_id", label:"User-ID"},
-    {key:"id", label:"ID"},
-  ],
-  heat_price_heating_year: [
-    {key:"heating_year_start", label:"Heizjahr-Start (Datum)"},
-    {key:"ct_per_kwh", label:"Preis (ct/kWh)"},
-    {key:"created_at", label:"Erstellt am"},
-    {key:"user_id", label:"User-ID"},
-    {key:"id", label:"ID"},
-  ],
-};
-
-function exportSchemaRows(){
-  const out = [];
-  for(const [table, cols] of Object.entries(EXPORT_SCHEMA)){
-    const dyn = exportColumnsFor(table) || cols;
-    for(const c of dyn){
-      out.push({Tabelle: table, Spalte: c.key, Name: c.label});
+// Column maps: order + friendly Excel header names
+const CSV_MAP = {
+  daily_readings: {
+    order: [
+      "day","time_hhmm","temp_c",
+      "heat_total_kwh","heat_rosi_kwh",
+      "elec_heating_kwh","elec_pump_kwh",
+      "full_load_minutes","buffer_charges","chips_kg_since_ash",
+      "hk_house","hk_rosi","fbh_rosi",
+      "note",
+      "created_at","updated_at",
+      "id","user_id"
+    ],
+    labels: {
+      day:"Datum",
+      time_hhmm:"Uhrzeit",
+      temp_c:"Temperatur (°C)",
+      heat_total_kwh:"Wärme gesamt (kWh, Zählerstand)",
+      heat_rosi_kwh:"Wärme Gebäude 2 (kWh, Zählerstand)",
+      elec_heating_kwh:"Strom Heizung gesamt (kWh, Zählerstand)",
+      elec_pump_kwh:"Strom Fernwärmeleitung/Pumpe (kWh, Zählerstand)",
+      full_load_minutes:"Vollaststunden (Minuten, Zählerstand)",
+      buffer_charges:"Pufferladungen (Zählerstand)",
+      chips_kg_since_ash:"Hackschnitzel seit letzter Asche (kg, Zählerstand)",
+      hk_house:"HK Wohnhaus an",
+      hk_rosi:"HK Gebäude 2 an",
+      fbh_rosi:"FBH Gebäude 2 an",
+      note:"Notiz",
+      created_at:"Erstellt am",
+      updated_at:"Aktualisiert am",
+      id:"ID",
+      user_id:"User ID"
+    }
+  },
+  ash_events: {
+    order:["ts","note","created_at","id","user_id"],
+    labels:{ ts:"Zeitpunkt", note:"Notiz", created_at:"Erstellt am", id:"ID", user_id:"User ID" }
+  },
+  chipping_events: {
+    order:["ts","ster_rm","cost_eur","who","note","created_at","id","user_id"],
+    labels:{
+      ts:"Zeitpunkt",
+      ster_rm:"Menge (Ster/RM)",
+      cost_eur:"Kosten (€)",
+      who:"Wer",
+      note:"Notiz",
+      created_at:"Erstellt am",
+      id:"ID",
+      user_id:"User ID"
+    }
+  },
+  maintenance_events: {
+    order:["day","note","ts","snapshot","created_at","id","user_id"],
+    labels:{
+      day:"Wartungsdatum",
+      note:"Notiz",
+      ts:"Gespeichert am (UTC)",
+      snapshot:"Snapshot (JSON – Tageswert)",
+      created_at:"Erstellt am",
+      id:"ID",
+      user_id:"User ID"
+    }
+  },
+  heat_price_heating_year: {
+    order:["heating_year_start","ct_per_kwh","created_at","id","user_id"],
+    labels:{
+      heating_year_start:"Heizjahr Start",
+      ct_per_kwh:"ct/kWh",
+      created_at:"Erstellt am",
+      id:"ID",
+      user_id:"User ID"
     }
   }
-  return out;
+};
+
+function normalizeRowsForCSV(tableName, rows){
+  const map = CSV_MAP[tableName];
+  if(!map) return { keys: Object.keys(rows?.[0]||{}), labels: {} };
+
+  // union of keys
+  const allKeys = Array.from(rows.reduce((set,r)=>{
+    Object.keys(r||{}).forEach(k=>set.add(k));
+    return set;
+  }, new Set()));
+
+  const order = map.order || [];
+  const ordered = [];
+  for(const k of order){
+    if(allKeys.includes(k)) ordered.push(k);
+  }
+  // append any unknown keys at the end (stable)
+  for(const k of allKeys){
+    if(!ordered.includes(k)) ordered.push(k);
+  }
+  return { keys: ordered, labels: map.labels || {} };
 }
 
+function toCSV(tableName, rows){
+  if(!rows || !rows.length) return "";
+  const { keys, labels } = normalizeRowsForCSV(tableName, rows);
 
-function exportColumnsFor(table){
-  const s = loadSettings();
-  const cols = EXPORT_SCHEMA[table] || null;
-  if(!cols) return null;
-  return cols.map(c => ({
-    key: c.key,
-    label: String(c.label || c.key)
-      .replaceAll("Wohnhaus", s.houseName || "Wohnhaus")
-      .replaceAll("Gebäude 2", s.rosiName || "Gebäude 2")
-  }));
+  const sep = ";"; // Excel (DE) friendly
+  const esc = (v)=>{
+    if(v===null || v===undefined) return "";
+    if(typeof v === "object") v = JSON.stringify(v);
+    const s = String(v);
+    // quote if separator/quotes/newline present
+    if(/[\";\n\r]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+    return s;
+  };
+
+  const header = keys.map(k => esc(labels[k] || k)).join(sep);
+  const lines = rows.map(r => keys.map(k => esc(r[k])).join(sep));
+  return [header, ...lines].join("\n");
 }
 
-  function downloadTextFile(filename, text, mime="text/plain"){
-    const blob = new Blob([text], {type:mime});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
-  }
+function downloadJSON(filename, obj){
+  downloadTextFile(filename, JSON.stringify(obj, null, 2), "application/json");
+}
 
-  function toCSV(rows, {separator=";"} = {}){
-    if(!rows || !rows.length) return "";
-    const keys = Array.from(rows.reduce((set,r)=>{
-      Object.keys(r||{}).forEach(k=>set.add(k));
-      return set;
-    }, new Set()));
-    const esc = (v)=>{
-      if(v===null || v===undefined) return "";
-      if(typeof v === "object") v = JSON.stringify(v);
-      const s = String(v);
-      if(new RegExp(`[\"\\n\\r${separator}]`).test(s)) return '"' + s.replace(/"/g,'""') + '"';
-      return s;
-    };
-    const head = keys.map(esc).join(separator);
-    const lines = rows.map(r => keys.map(k=>esc(r[k])).join(separator));
-    return [head, ...lines].join("\n");
-  }
+function downloadCSV(filename, tableName, rows){
+  downloadTextFile(filename, toCSV(tableName, rows), "text/csv;charset=utf-8");
+}
 
-  function downloadJSON(filename, obj){
-    downloadTextFile(filename, JSON.stringify(obj, null, 2), "application/json");
+function downloadColumnsOverviewCSV(){
+  const sep=";";
+  const esc=(s)=>('"'+String(s??"").replace(/"/g,'""')+'"');
+  const lines = ["Tabelle;Spalte;Excel-Name"];
+  for(const [t, cfg] of Object.entries(CSV_MAP)){
+    const labels = cfg.labels || {};
+    const keys = cfg.order || Object.keys(labels);
+    for(const k of keys){
+      lines.push([esc(t), esc(k), esc(labels[k]||k)].join(sep));
+    }
   }
+  downloadTextFile(`heizlog-spaltenuebersicht-${new Date().toISOString().slice(0,10)}.csv`, lines.join("\n"), "text/csv;charset=utf-8");
+}
 
-  function downloadCSV(filename, rows, columns){
-    // Excel (DE) friendly: Separator ';'
-    const csv = toCSV(rows, {separator:";"});
-    downloadTextFile(filename, csv, "text/csv;charset=utf-8");
-  }
-
-  async function exportCsvBackup(){
+async function exportCsvBackup(){
   const uid = userId();
   const date = new Date().toISOString().slice(0,10);
 
-  // 1) Spaltenübersicht (hilft in Excel zu verstehen was was ist)
-  const schemaRows = exportSchemaRows();
-  downloadCSV(`heizlog-${date}-Spaltenuebersicht.csv`, schemaRows);
+  // 1) Spaltenübersicht (damit Excel klar ist, was was bedeutet)
+  downloadColumnsOverviewCSV();
 
-  // 2) Tabellen
-  const tables = [
-    {name:"daily_readings", label:"Tageswerte"},
-    {name:"ash_events", label:"Asche-Events"},
-    {name:"chipping_events", label:"Haecksel-Events"},
-    {name:"maintenance_events", label:"Wartungen"},
-    {name:"heat_price_heating_year", label:"Preise"},
-  ];
+  // 2) Tabellen als CSV
+  const tables = ["daily_readings","ash_events","chipping_events","maintenance_events","heat_price_heating_year"];
+  const niceName = {
+    daily_readings:"tageswerte",
+    ash_events:"asche-events",
+    chipping_events:"haecksel-events",
+    maintenance_events:"wartungen",
+    heat_price_heating_year:"heizjahr-preise"
+  };
 
   for(const t of tables){
-    const { data, error } = await supabase.from(t.name).select("*").eq("user_id", uid);
+    const { data, error } = await supabase.from(t).select("*").eq("user_id", uid);
     if(error) throw error;
     const rows = data || [];
-    const cols = exportColumnsFor(t.name);
-    const fn = `heizlog-${date}-${t.label}.csv`;
-    downloadCSV(fn, rows, cols);
+    const fn = `heizlog-${niceName[t] || t}-${date}.csv`;
+    downloadCSV(fn, t, rows);
   }
 }
 
 
-
-  // ---------- Wiring ----------
+// ---------- Wiring ----------
   // ---------- Changelog ----------
   function renderChangelog(){
     const box = $("changelogBox");
@@ -1747,11 +1769,3 @@ async function init(){
 
 document.addEventListener("DOMContentLoaded", init);
 })();
-function toCSV(rows, columns){
-  if(!rows || !rows.length) return "";
-  const cols = Array.isArray(columns) && columns.length ? columns : null;
-  const keys = cols ? cols.map(c=>c.key) : Array.from(rows.reduce((set,r)=>{
-    Object.keys(r||{}).forEach(k=>set.add(k));
-    return set;
-  }, new Set()));
-
