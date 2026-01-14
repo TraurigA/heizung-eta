@@ -10,6 +10,8 @@
     "v": "3.3.3",
     "date": "2026-01-14",
     "items": [
+      "Einträge: Badge \"Schalter\" entfernt",
+      "Fix: CSV-Download bei Wartung funktioniert wieder",
       "Backup-Export Excel-freundlicher (CSV mit ; und verständlichen Dateinamen)",
       "Wartungen: Liste + Download (JSON/CSV/Snapshot) + Löschen"
     ]
@@ -1512,7 +1514,7 @@ async function exportCsvBackup(){
         btnCsv.textContent="CSV";
         btnCsv.addEventListener("click", ()=>{
           const fn = `Wartung_${ev.day || "unknown"}.csv`;
-          downloadCSV(fn, [ev], exportColumnsFor("maintenance_events"));
+          downloadCSV(fn, "maintenance_events", [ev]);
         });
 
         const btnSnap = document.createElement("button");
@@ -1661,7 +1663,7 @@ async function init(){
         if(doDl){
           const row = { day:d, note: note||null, snapshot: snap||null, ts: new Date().toISOString() };
           downloadJSON(`Wartung_${d}.json`, row);
-          downloadCSV(`Wartung_${d}.csv`, [row], exportColumnsFor("maintenance_events"));
+          downloadCSV(`Wartung_${d}.csv`, "maintenance_events", [row]);
           if(snap) downloadJSON(`Wartung_Snapshot_${d}.json`, snap);
         }
 
