@@ -11,10 +11,12 @@
     "date": "2026-01-14",
     "items": [
       "Einträge: Badge \"Schalter\" entfernt",
+      "Fix: Vergleich Diagrammtyp (Balken/Linie)",
       "Fix: CSV-Download bei Wartung funktioniert wieder",
       "Backup-Export Excel-freundlicher (CSV mit ; und verständlichen Dateinamen)",
       "Wartungen: Liste + Download (JSON/CSV/Snapshot) + Löschen"
-    ]
+    
+]
   },
   {
     "v": "3.3.0",
@@ -721,7 +723,7 @@ async function compareYears(yearA, yearB){
 
     if(compareChart) compareChart.destroy();
     compareChart = new Chart($("chartCompare"), {
-      type:"bar",
+      type:getChartType("cmpChartType","chartType.compare"),
       data:{
         labels:["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],
         datasets:[
