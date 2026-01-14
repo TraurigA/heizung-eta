@@ -918,7 +918,6 @@ async function compareYears(yearA, yearB){
       const hasElec = (r.elec_heating_kwh!=null) || (r.elec_pump_kwh!=null);
       const hasOps  = (r.full_load_minutes!=null) || (r.buffer_charges!=null);
       const hasChips= (r.chips_kg_since_ash!=null);
-      const hasSwitch = !!(r.hk_house || r.hk_rosi || r.fbh_rosi);
       const hasNote = !!(r.note && String(r.note).trim());
 
       function addBadge(txt){
@@ -932,7 +931,6 @@ async function compareYears(yearA, yearB){
       if(hasElec) addBadge("Strom");
       if(hasOps) addBadge("Betrieb");
       if(hasChips) addBadge("Hackschnitzel");
-      if(hasSwitch) addBadge("Schalter");
       if(hasNote) addBadge("Notiz");
 
       left.appendChild(badges);
@@ -1027,15 +1025,17 @@ async function compareYears(yearA, yearB){
 
   // ---------- Downloads (JSON/CSV – Excel friendly) ----------
 function downloadTextFile(filename, text, mime="text/plain"){
-  const blob = new Blob([text], { type: mime });
+  const blob = new Blob([text], {type:mime});
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => { try { URL.revokeObjectURL(a.href); } catch(_){} }, 1500);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
+
 
 // Column maps: order + friendly Excel header names
 const CSV_MAP = {
